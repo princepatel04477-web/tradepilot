@@ -1,4 +1,13 @@
-from PySide6.QtCore import QObject, Signal
+try:
+    from PySide6.QtCore import QObject, Signal
+except ImportError:
+    class DummySignal:
+        def emit(self, *args, **kwargs): pass
+        def connect(self, slot): pass
+    def Signal(*args, **kwargs):
+        return DummySignal()
+    class QObject:
+        pass
 
 class EventBus(QObject):
     # Log Signals

@@ -2,7 +2,28 @@ import time
 import random
 from datetime import datetime
 from typing import Optional, List
-from PySide6.QtCore import QThread, Signal, QMutex, QMutexLocker
+try:
+    from PySide6.QtCore import QThread, Signal, QMutex, QMutexLocker
+    HAS_PYSIDE = True
+except ImportError:
+    HAS_PYSIDE = False
+    import threading
+    class QThread:
+        def __init__(self): pass
+        def start(self):
+            t = threading.Thread(target=self.run, daemon=True)
+            t.start()
+    class QMutex:
+        pass
+    class QMutexLocker:
+        def __init__(self, mutex): pass
+        def __enter__(self): return self
+        def __exit__(self, a, b, c): pass
+    class DummySignal:
+        def emit(self, *args, **kwargs): pass
+        def connect(self, slot): pass
+    def Signal(*args, **kwargs):
+        return DummySignal()
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from app.models.campaign import Campaign
