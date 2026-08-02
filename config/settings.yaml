@@ -1,0 +1,23 @@
+app:
+  name: TradePilot
+  version: 1.0.0
+  theme: dark
+
+sender:
+  default_sender: ""
+  default_signature: "Best regards,\nTradePilot Team"
+
+campaign_defaults:
+  min_delay_sec: 30
+  max_delay_sec: 60
+  daily_send_limit: 500
+  retry_attempts: 3
+  dry_run_default: true
+
+database:
+  sqlite_path: "tradepilot.db"
+
+paths:
+  logs_dir: "logs"
+  exports_dir: "exports"
+  campaigns_dir: "campaigns"

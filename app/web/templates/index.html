@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradePilot Remote — AI Email Outreach Platform</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Navigation Sidebar -->
+        <aside class="sidebar">
+            <div class="brand">
+                <h2>✈ TradePilot</h2>
+                <span class="badge">Vercel Remote</span>
+            </div>
+            <nav class="nav-menu">
+                <button class="nav-btn active" onclick="showTab('dashboard')">📊 Dashboard</button>
+                <button class="nav-btn" onclick="showTab('campaigns')">🚀 Campaigns</button>
+                <button class="nav-btn" onclick="showTab('contacts')">👥 Contacts</button>
+                <button class="nav-btn" onclick="showTab('templates')">📝 Templates</button>
+                <button class="nav-btn" onclick="showTab('exports')">📄 Email PDF/TXT</button>
+            </nav>
+        </aside>
+
+        <!-- Main Content View -->
+        <main class="main-content">
+            <!-- DASHBOARD TAB -->
+            <section id="tab-dashboard" class="tab-content active">
+                <header class="page-header">
+                    <h1>Dashboard Overview</h1>
+                    <p class="subtitle">Real-time metrics and remote campaign controls</p>
+                </header>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <span class="card-title">Total Contacts</span>
+                        <h3 id="stat-contacts">0</h3>
+                    </div>
+                    <div class="stat-card">
+                        <span class="card-title">Campaigns</span>
+                        <h3 id="stat-campaigns">0</h3>
+                    </div>
+                    <div class="stat-card">
+                        <span class="card-title">Sent Today</span>
+                        <h3 id="stat-sent">0</h3>
+                    </div>
+                    <div class="stat-card">
+                        <span class="card-title">Success Rate</span>
+                        <h3 id="stat-rate">100%</h3>
+                    </div>
+                </div>
+
+                <div class="card-panel">
+                    <h3>Recent Email Activity</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Recipient</th>
+                                <th>Status</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="activity-tbody">
+                            <tr><td colspan="4" class="text-center">Loading activity logs...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- CAMPAIGNS TAB -->
+            <section id="tab-campaigns" class="tab-content">
+                <header class="page-header">
+                    <h1>Campaign Management & PDF/TXT Exporter</h1>
+                </header>
+
+                <div class="grid-2col">
+                    <div class="card-panel">
+                        <h3>Create & Export Campaign</h3>
+                        <form id="campaign-form" onsubmit="handleCreateCampaign(event)">
+                            <div class="form-group">
+                                <label>Campaign Name</label>
+                                <input type="text" id="camp-name" required placeholder="e.g. Q3 Export Prospecting">
+                            </div>
+                            <div class="form-group">
+                                <label>Select Template</label>
+                                <select id="camp-template" required></select>
+                            </div>
+                            <div class="form-group">
+                                <label>Subject Line Override (Optional)</label>
+                                <input type="text" id="camp-subject" placeholder="Leave blank to use template subject">
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Min Delay (s)</label>
+                                    <input type="number" id="camp-min-delay" value="30" min="1">
+                                </div>
+                                <div class="form-group">
+                                    <label>Max Delay (s)</label>
+                                    <input type="number" id="camp-max-delay" value="60" min="1">
+                                </div>
+                            </div>
+                            <div class="form-group checkbox-group">
+                                <input type="checkbox" id="camp-dryrun" checked>
+                                <label for="camp-dryrun">Dry Run Mode (Simulate without sending)</label>
+                            </div>
+                            <button type="submit" class="btn btn-primary">🚀 Launch & Generate PDF/TXT Exports</button>
+                        </form>
+                    </div>
+
+                    <div class="card-panel">
+                        <h3>Campaigns List</h3>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Status</th>
+                                    <th>Recipients</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="campaigns-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- CONTACTS TAB -->
+            <section id="tab-contacts" class="tab-content">
+                <header class="page-header">
+                    <h1>Contact Management</h1>
+                </header>
+                <div class="card-panel">
+                    <div class="action-bar">
+                        <input type="file" id="contact-file-input" style="display:none;" onchange="uploadContactFile(event)">
+                        <button class="btn btn-primary" onclick="document.getElementById('contact-file-input').click()">📁 Import Excel / CSV</button>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Company</th>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Country</th>
+                            </tr>
+                        </thead>
+                        <tbody id="contacts-tbody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- TEMPLATES TAB -->
+            <section id="tab-templates" class="tab-content">
+                <header class="page-header">
+                    <h1>Email Template Editor</h1>
+                </header>
+                <div class="card-panel">
+                    <form id="template-form" onsubmit="handleCreateTemplate(event)">
+                        <div class="form-group">
+                            <label>Template Name</label>
+                            <input type="text" id="tpl-name" required placeholder="Frozen Shrimp Supply">
+                        </div>
+                        <div class="form-group">
+                            <label>Subject Line</label>
+                            <input type="text" id="tpl-subject" required placeholder="Frozen Shrimp Supply">
+                        </div>
+                        <div class="form-group">
+                            <label>Template Body (Jinja2)</label>
+                            <textarea id="tpl-body" rows="8" required placeholder="Dear {{Contact}}, ..."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">💾 Save Template</button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- PER-EMAIL EXPORTS TAB -->
+            <section id="tab-exports" class="tab-content">
+                <header class="page-header">
+                    <h1>Per-Email PDF & TXT Document Center</h1>
+                    <p class="subtitle">Download individual formatted .pdf and .txt email copies one by one or as a ZIP bundle</p>
+                </header>
+                <div class="card-panel">
+                    <h3>Generated Document Bundles</h3>
+                    <p>Select a campaign to download all individual rendered email documents (.pdf and .txt):</p>
+                    <div id="exports-list"></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
