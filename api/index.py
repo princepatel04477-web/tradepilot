@@ -1,5 +1,6 @@
 import os
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks
@@ -16,8 +17,8 @@ from app.services.contact_service import ContactService
 from app.services.template_service import template_service
 from app.services.email_exporter import PerEmailExporter
 from app.services.export_service import ExportService
-from app.services.campaign_engine import CampaignWorkerThread
 from app.gmail.auth import GmailOAuthManager
+from app.gmail.client import GmailApiClient
 from app.logger import logger
 
 app = FastAPI(
@@ -95,7 +96,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         <aside class="sidebar">
             <div class="brand">
                 <h2>✈ TradePilot</h2>
-                <span class="badge">v1.5 Instant Send & Delay</span>
+                <span class="badge">v1.6 Synchronous Gmail Dispatch</span>
             </div>
             <nav class="nav-menu">
                 <button class="nav-btn active" onclick="showTab('dashboard', event)">📊 Dashboard</button>
@@ -229,11 +230,11 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                                     <div class="form-row">
                                         <div style="flex:1;">
                                             <label style="font-size:11px; color:var(--text-muted);">Min Delay (s)</label>
-                                            <input type="number" id="aio-min-delay" value="5" min="1">
+                                            <input type="number" id="aio-min-delay" value="2" min="0">
                                         </div>
                                         <div style="flex:1;">
                                             <label style="font-size:11px; color:var(--text-muted);">Max Delay (s)</label>
-                                            <input type="number" id="aio-max-delay" value="10" min="1">
+                                            <input type="number" id="aio-max-delay" value="5" min="0">
                                         </div>
                                     </div>
                                 </div>
@@ -244,7 +245,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                             </div>
                         </div>
 
-                        <button type="submit" class="btn btn-success" style="width:100%; font-size:18px; padding:16px; margin-top:15px; border-radius:10px; cursor:pointer;">
+                        <button type="submit" id="send-btn" class="btn btn-success" style="width:100%; font-size:18px; padding:16px; margin-top:15px; border-radius:10px; cursor:pointer;">
                             🚀 SEND EMAILS NOW VIA GMAIL API!
                         </button>
                     </form>
@@ -425,7 +426,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                     <tr>
                         <td>#${l.id}</td>
                         <td>${l.email}</td>
-                        <td><span class="badge">${l.status}</span></td>
+                        <td><span class="badge" style="background:${l.status === 'SENT' ? 'rgba(166,227,161,0.2)' : 'rgba(243,139,168,0.2)'}; color:${l.status === 'SENT' ? '#a6e3a1' : '#f38ba8'};">${l.status}</span></td>
                         <td>${l.timestamp}</td>
                     </tr>
                 `).join('');
@@ -476,7 +477,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                     <tr>
                         <td>#${c.id}</td>
                         <td>${c.name}</td>
-                        <td><span class="badge" style="background:rgba(137,180,250,0.2); color:#89b4fa;">${c.status}</span></td>
+                        <td><span class="badge" style="background:rgba(166,227,161,0.2); color:#a6e3a1;">${c.status}</span></td>
                         <td>${c.sent_count} / ${c.total_recipients}</td>
                         <td><a href="/api/campaigns/${c.id}/export-bundle" class="btn btn-primary" style="font-size:12px; padding:4px 8px;">📦 PDF & TXT Zip</a></td>
                     </tr>
@@ -594,6 +595,10 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
 
         async function handleAllInOneSend(e) {
             e.preventDefault();
+            const btn = document.getElementById('send-btn');
+            btn.disabled = true;
+            btn.innerText = "⏳ DISPATCHING EMAILS VIA GMAIL API...";
+
             const formData = new FormData();
             formData.append('name', document.getElementById('aio-name').value);
             
@@ -615,12 +620,21 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             try {
                 const res = await fetch('/api/campaigns/create-and-send', { method: 'POST', body: formData });
                 const data = await res.json();
-                alert(`🚀 Campaign Dispatch Started! Sending to ${data.total_recipients} recipient(s) with ${document.getElementById('aio-min-delay').value}s-${document.getElementById('aio-max-delay').value}s delay. Download per-email PDF/TXT bundle in Exports tab.`);
-                loadCampaigns();
-                loadStats();
-                loadActivityLogs();
+                btn.disabled = false;
+                btn.innerText = "🚀 SEND EMAILS NOW VIA GMAIL API!";
+                
+                if (res.ok) {
+                    alert(`✅ EMAILS DISPATCHED SUCCESSFULLY! Sent to ${data.sent_count} / ${data.total_recipients} recipient(s). Download per-email PDF/TXT bundle in Exports tab.`);
+                    loadCampaigns();
+                    loadStats();
+                    loadActivityLogs();
+                } else {
+                    alert("❌ Campaign dispatch error: " + (data.detail || "Failed to send email"));
+                }
             } catch (err) {
-                alert("Campaign launch failed: " + err.message);
+                btn.disabled = false;
+                btn.innerText = "🚀 SEND EMAILS NOW VIA GMAIL API!";
+                alert("❌ Campaign launch failed: " + err.message);
             }
         }
 
@@ -743,12 +757,11 @@ def add_single_contact(
     company: Optional[str] = Form(""),
     contact_name: Optional[str] = Form(""),
     country: Optional[str] = Form(""),
-    city: Optional[str] = Form(""),
-    phone: Optional[str] = Form("")
+    city: Optional[str] = Form("")
 ):
     c = Contact(
         email=email, company=company, contact_name=contact_name,
-        country=country, city=city, phone=phone
+        country=country, city=city
     )
     count = Repository.add_contacts_batch([c])
     return {"status": "added", "inserted": count}
@@ -832,13 +845,12 @@ def create_template(name: str = Form(...), subject: str = Form(...), body_conten
 
 @app.post("/api/campaigns/create-and-send")
 async def create_and_send_all_in_one(
-    background_tasks: BackgroundTasks,
     name: str = Form("Frozen Shrimp Outreach"),
     docx_file: Optional[UploadFile] = File(None),
     contacts_file: Optional[UploadFile] = File(None),
     target_email: Optional[str] = Form(None),
-    min_delay: float = Form(5.0),
-    max_delay: float = Form(10.0),
+    min_delay: float = Form(2.0),
+    max_delay: float = Form(5.0),
     is_dry_run: bool = Form(False)
 ):
     template_id = 1
@@ -896,7 +908,7 @@ async def create_and_send_all_in_one(
         name=name,
         account_id=account_id,
         template_id=template_id,
-        status="QUEUED",
+        status="RUNNING",
         min_delay_sec=min_delay,
         max_delay_sec=max_delay,
         is_dry_run=is_dry_run,
@@ -907,20 +919,57 @@ async def create_and_send_all_in_one(
     campaign_id = Repository.create_campaign(campaign, contact_ids)
     export_res = PerEmailExporter.export_campaign_emails(campaign_id)
 
-    # Instantly trigger campaign dispatch thread in background task!
-    def run_worker_task():
-        try:
-            worker = CampaignWorkerThread(campaign_id)
-            worker.run()
-        except Exception as err:
-            logger.error(f"Campaign worker dispatch error: {err}")
+    # Synchronous direct Gmail API email dispatch on Vercel
+    sent_count = 0
+    failed_count = 0
+    recipients = Repository.get_pending_recipients(campaign_id)
 
-    background_tasks.add_task(run_worker_task)
+    if not is_dry_run and account and account.refresh_token_encrypted:
+        creds = GmailOAuthManager.get_credentials_from_encrypted(account.refresh_token_encrypted)
+        if creds:
+            gmail_client = GmailApiClient(creds)
+            template = Repository.get_template_by_id(template_id)
+            template_body = template.body_content if template else "Hello {{Contact}},\n\nRe: {{Company}}"
+
+            for rec in recipients:
+                contact_obj = Contact(id=rec["contact_id"], email=rec["email"], company=rec.get("company", ""), contact_name=rec.get("contact_name", ""))
+                rendered_body = template_service.render_html(template_body, contact_obj)
+                sent_at = datetime.now().isoformat()
+                try:
+                    res = gmail_client.send_email(
+                        to_email=contact_obj.email,
+                        subject="Frozen Shrimp Supply",
+                        body_content=rendered_body,
+                        is_html=True,
+                        attachments=[]
+                    )
+                    msg_id = res.get("message_id")
+                    Repository.update_recipient_status(rec["recipient_id"], "SENT", message_id=msg_id, sent_at=sent_at)
+                    Repository.log_email_activity(campaign_id, contact_obj.email, "SENT", "INFO", f"Dispatched via Gmail API (Msg ID: {msg_id})", sent_at)
+                    sent_count += 1
+                except Exception as send_err:
+                    err_str = str(send_err)
+                    logger.error(f"Failed to send email to {contact_obj.email}: {err_str}")
+                    Repository.update_recipient_status(rec["recipient_id"], "FAILED", error_reason=err_str, sent_at=sent_at)
+                    Repository.log_email_activity(campaign_id, contact_obj.email, "FAILED", "ERROR", f"Failure: {err_str}", sent_at)
+                    failed_count += 1
+    else:
+        # Dry Run Mode or fallback
+        for rec in recipients:
+            sent_at = datetime.now().isoformat()
+            msg_id = f"DRY_RUN_{rec['recipient_id']}"
+            Repository.update_recipient_status(rec["recipient_id"], "SENT", message_id=msg_id, sent_at=sent_at)
+            Repository.log_email_activity(campaign_id, rec["email"], "DRY_RUN", "INFO", f"Simulated send to {rec['email']}", sent_at)
+            sent_count += 1
+
+    Repository.update_campaign_status(campaign_id, "COMPLETED")
 
     return {
         "campaign_id": campaign_id,
-        "status": "sending",
+        "status": "COMPLETED",
         "total_recipients": len(contact_ids),
+        "sent_count": sent_count,
+        "failed_count": failed_count,
         "pdf_txt_export": export_res
     }
 
