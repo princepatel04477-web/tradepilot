@@ -1,5 +1,7 @@
 import base64
 import mimetypes
+import smtplib
+import time
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from email.mime.text import MIMEText
@@ -14,7 +16,7 @@ from app.logger import logger
 from app.models.template import AttachmentItem
 
 class GmailApiClient:
-    """Official Gmail API client for constructing RFC 2822 messages and sending via API."""
+    """Official Gmail API client for constructing RFC 2822 messages and sending via API or SMTP."""
 
     def __init__(self, credentials: Credentials):
         self.credentials = credentials
@@ -88,3 +90,31 @@ class GmailApiClient:
             "thread_id": res.get("threadId"),
             "status": "SENT"
         }
+
+    @staticmethod
+    def send_email_smtp(
+        from_email: str,
+        app_password: str,
+        to_email: str,
+        subject: str,
+        body_content: str,
+        is_html: bool = True
+    ) -> Dict[str, Any]:
+        """Dispatches real live email via Gmail SMTP (smtp.gmail.com:587 TLS) using a 16-character App Password."""
+        msg = MIMEMultipart("alternative")
+        msg["From"] = f"Varunya International Sales <{from_email}>"
+        msg["To"] = to_email
+        msg["Subject"] = subject
+
+        mime_type = "html" if is_html else "plain"
+        msg.attach(MIMEText(body_content, mime_type, "utf-8"))
+
+        clean_pwd = app_password.replace(" ", "").strip()
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(from_email, clean_pwd)
+            server.send_message(msg)
+
+        msg_id = f"SMTP_{int(time.time()*1000)}"
+        logger.info(f"Dispatched live SMTP email to {to_email} via Gmail (Msg ID: {msg_id})")
+        return {"message_id": msg_id, "status": "SENT"}

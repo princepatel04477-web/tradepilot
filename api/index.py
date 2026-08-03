@@ -101,7 +101,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         <aside class="sidebar">
             <div class="brand">
                 <h2>✈ TradePilot</h2>
-                <span class="badge">v2.5 Robust OAuth</span>
+                <span class="badge">v3.0 Gmail API + SMTP</span>
             </div>
             <nav class="nav-menu">
                 <button class="nav-btn active" onclick="showTab('dashboard', event)">📊 Dashboard</button>
@@ -162,15 +162,15 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             <!-- GMAIL ACCOUNTS TAB -->
             <section id="tab-gmail" class="tab-content">
                 <header class="page-header">
-                    <h1>Gmail OAuth Accounts Manager</h1>
-                    <p class="subtitle">Connect sender accounts via official Google OAuth 2.0 (varunyainternational@gmail.com)</p>
+                    <h1>Gmail Sender Accounts Manager</h1>
+                    <p class="subtitle">Connect varunyainternational@gmail.com via App Password (Instant) or OAuth JSON</p>
                 </header>
 
                 <div class="card-panel">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
                         <h3>Connected Accounts</h3>
                         <input type="file" id="json-file-input" style="display:none;" onchange="uploadCredentialsJson(event)">
-                        <button class="btn btn-primary" onclick="document.getElementById('json-file-input').click()">🔑 Upload credentials.json to Connect Account</button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('json-file-input').click()">🔑 Upload credentials.json / token.json</button>
                     </div>
 
                     <table class="data-table">
@@ -178,7 +178,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                             <tr>
                                 <th>ID</th>
                                 <th>Sender Email</th>
-                                <th>OAuth Status</th>
+                                <th>Auth Status</th>
                                 <th>Sent Today</th>
                                 <th>Connected At</th>
                             </tr>
@@ -187,6 +187,16 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                             <tr><td colspan="5" class="text-center">Loading connected accounts...</td></tr>
                         </tbody>
                     </table>
+
+                    <div style="background: rgba(137, 180, 250, 0.05); border: 1px solid var(--accent-blue); padding: 20px; border-radius: 10px; margin-top: 20px;">
+                        <strong style="color:var(--accent-blue); font-size:16px;">⚡ Connect via Gmail App Password (100% Instant Live Send)</strong>
+                        <p style="font-size:12px; color:var(--text-muted); margin-top:4px; margin-bottom:12px;">No Google Cloud setup required! Generate a 16-character App Password at <a href="https://myaccount.google.com/apppasswords" target="_blank" style="color:var(--accent-blue);">myaccount.google.com/apppasswords</a> and paste it below:</p>
+                        <form onsubmit="connectAppPassword(event)" style="display:flex; gap:10px; align-items:center;">
+                            <input type="email" id="smtp-email" value="varunyainternational@gmail.com" required placeholder="Sender Email" style="flex:1;">
+                            <input type="password" id="smtp-pwd" required placeholder="16-character App Password (e.g. abcd efgh ijkl mnop)" style="flex:1.8;">
+                            <button type="submit" class="btn btn-primary" style="white-space:nowrap;">⚡ Save App Password</button>
+                        </form>
+                    </div>
                 </div>
             </section>
 
@@ -247,7 +257,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                         <div id="progress-text" style="font-size:12px; color:var(--accent-green); margin-top:4px; display:none; text-align:center; font-weight:600;"></div>
 
                         <button type="submit" id="send-btn" class="btn btn-success" style="width:100%; font-size:18px; padding:16px; margin-top:15px; border-radius:10px; cursor:pointer;">
-                            🚀 SEND EMAILS NOW VIA GMAIL API!
+                            🚀 SEND EMAILS NOW VIA GMAIL API / SMTP!
                         </button>
                     </form>
                 </div>
@@ -453,13 +463,13 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                     <tr>
                         <td>#${a.id}</td>
                         <td><strong>${a.email}</strong></td>
-                        <td><span class="badge" style="background:${a.has_oauth ? 'rgba(166,227,161,0.2)' : 'rgba(243,139,168,0.2)'}; color:${a.has_oauth ? '#a6e3a1' : '#f38ba8'};">${a.has_oauth ? '✅ Active OAuth' : '⚠️ Credentials Needed'}</span></td>
+                        <td><span class="badge" style="background:${a.has_oauth ? 'rgba(166,227,161,0.2)' : 'rgba(243,139,168,0.2)'}; color:${a.has_oauth ? '#a6e3a1' : '#f38ba8'};">${a.has_oauth ? (a.auth_type === 'SMTP' ? '⚡ App Password Active' : '✅ OAuth Active') : '⚠️ Password Needed'}</span></td>
                         <td>${a.sent_today_count}</td>
                         <td>${a.created_at}</td>
                     </tr>
                 `).join('');
 
-                select.innerHTML = accounts.map(a => `<option value="${a.id}">${a.email} ${a.has_oauth ? '(OAuth Active)' : '(Upload credentials.json)'}</option>`).join('');
+                select.innerHTML = accounts.map(a => `<option value="${a.id}">${a.email} ${a.has_oauth ? '(Active)' : '(Connect Password)'}</option>`).join('');
             } catch (e) {
                 console.error("Accounts load failed", e);
             }
@@ -575,6 +585,27 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             }
         }
 
+        async function connectAppPassword(e) {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('email', document.getElementById('smtp-email').value);
+            formData.append('app_password', document.getElementById('smtp-pwd').value);
+
+            try {
+                const res = await fetch('/api/accounts/connect-smtp', { method: 'POST', body: formData });
+                if (!res.ok) {
+                    const errText = await res.text();
+                    alert("❌ App Password Error: " + errText);
+                    return;
+                }
+                const data = await res.json();
+                alert(`⚡ Live Sending Activated for ${data.email}! You can now dispatch campaigns live.`);
+                loadAccounts();
+            } catch (err) {
+                alert("❌ App Password Connection Failed: " + err.message);
+            }
+        }
+
         async function uploadCredentialsJson(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -588,7 +619,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                     return;
                 }
                 const data = await res.json();
-                alert(`✅ Successfully Connected Gmail Account: ${data.email}! Live Gmail API outreach is now active.`);
+                alert(`✅ Successfully Connected Gmail Account: ${data.email}! Live outreach active.`);
                 loadAccounts();
             } catch (err) {
                 alert("❌ Account connection failed: " + err.message);
@@ -637,7 +668,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                 const campaignId = createData.campaign_id;
                 const total = createData.total_recipients;
 
-                pText.innerText = `Sending 0 of ${total} emails via Gmail API...`;
+                pText.innerText = `Sending 0 of ${total} emails via Gmail API / SMTP...`;
 
                 let remaining = total;
                 let totalSent = 0;
@@ -670,13 +701,13 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                 }
 
                 btn.disabled = false;
-                btn.innerText = "🚀 SEND EMAILS NOW VIA GMAIL API!";
-                pText.innerText = `✅ ALL ${totalSent} EMAILS DISPATCHED LIVE VIA GMAIL API!`;
-                alert(`✅ ALL ${totalSent} EMAILS DISPATCHED LIVE VIA GMAIL API! Check your Gmail Sent folder! Download PDF & TXT copies in Exports tab.`);
+                btn.innerText = "🚀 SEND EMAILS NOW VIA GMAIL API / SMTP!";
+                pText.innerText = `✅ ALL ${totalSent} EMAILS DISPATCHED LIVE!`;
+                alert(`✅ ALL ${totalSent} EMAILS DISPATCHED LIVE! Check your Gmail Sent folder! Download PDF & TXT copies in Exports tab.`);
 
             } catch (err) {
                 btn.disabled = false;
-                btn.innerText = "🚀 SEND EMAILS NOW VIA GMAIL API!";
+                btn.innerText = "🚀 SEND EMAILS NOW VIA GMAIL API / SMTP!";
                 pText.innerText = "❌ Dispatch Error";
                 alert("❌ Campaign dispatch error: " + err.message);
             }
@@ -754,14 +785,46 @@ def get_stats():
 @app.get("/api/accounts")
 def get_accounts():
     accounts = Repository.get_accounts()
-    return [
-        {
+    res = []
+    for a in accounts:
+        auth_type = "NONE"
+        has_oauth = False
+        if a.refresh_token_encrypted and len(a.refresh_token_encrypted) > 10:
+            has_oauth = True
+            try:
+                dec = json.loads(token_crypto.decrypt(a.refresh_token_encrypted))
+                if isinstance(dec, dict) and dec.get("type") == "SMTP":
+                    auth_type = "SMTP"
+                else:
+                    auth_type = "OAUTH"
+            except Exception:
+                auth_type = "OAUTH"
+
+        res.append({
             "id": a.id, "email": a.email, "display_name": a.display_name,
-            "is_active": a.is_active, "has_oauth": bool(a.refresh_token_encrypted and len(a.refresh_token_encrypted) > 10),
+            "is_active": a.is_active, "has_oauth": has_oauth, "auth_type": auth_type,
             "sent_today_count": a.sent_today_count,
             "created_at": a.created_at
-        } for a in accounts
-    ]
+        })
+    return res
+
+@app.post("/api/accounts/connect-smtp")
+def connect_account_smtp(
+    email: str = Form("varunyainternational@gmail.com"),
+    app_password: str = Form(...)
+):
+    clean_pwd = app_password.replace(" ", "").strip()
+    token_data = {"type": "SMTP", "app_password": clean_pwd, "email": email}
+    encrypted_token = token_crypto.encrypt(json.dumps(token_data))
+    
+    with db_manager.get_connection() as conn:
+        conn.execute(
+            "UPDATE accounts SET refresh_token_encrypted = ?, is_active = 1 WHERE email = ?",
+            (encrypted_token, email)
+        )
+        conn.commit()
+
+    return {"status": "connected", "email": email, "auth_type": "SMTP"}
 
 @app.post("/api/accounts/connect")
 async def connect_account_json(file: UploadFile = File(...)):
@@ -1063,41 +1126,79 @@ def process_campaign_batch(campaign_id: int, batch_size: int = 3):
         refresh_tok = getattr(acc_obj, "refresh_token_encrypted", None) if acc_obj else None
 
         if not is_dry_run and acc_obj and refresh_tok:
-            creds = GmailOAuthManager.get_credentials_from_encrypted(refresh_tok)
-            if creds:
-                gmail_client = GmailApiClient(creds)
+            is_smtp = False
+            app_pwd = None
+            from_em = acc_obj.email
+
+            try:
+                dec_json = json.loads(token_crypto.decrypt(refresh_tok))
+                if isinstance(dec_json, dict) and dec_json.get("type") == "SMTP":
+                    is_smtp = True
+                    app_pwd = dec_json.get("app_password")
+                    from_em = dec_json.get("email", acc_obj.email)
+            except Exception:
+                is_smtp = False
+
+            if is_smtp and app_pwd:
                 for rec in batch:
                     c_obj = Contact(id=rec["contact_id"], email=rec["email"], company=rec.get("company", ""), contact_name=rec.get("contact_name", ""))
                     rendered_body = template_service.render_html(template_body, c_obj)
                     sent_at = datetime.now().isoformat()
                     try:
-                        res = gmail_client.send_email(
+                        res = GmailApiClient.send_email_smtp(
+                            from_email=from_em,
+                            app_password=app_pwd,
                             to_email=c_obj.email,
                             subject="Frozen Shrimp Supply",
                             body_content=rendered_body,
-                            is_html=True,
-                            attachments=[]
+                            is_html=True
                         )
                         msg_id = res.get("message_id")
                         Repository.update_recipient_status(rec["recipient_id"], "SENT", message_id=msg_id, sent_at=sent_at)
-                        Repository.log_email_activity(campaign_id, c_obj.email, "SENT", "INFO", f"Dispatched via Gmail API (Msg ID: {msg_id})", sent_at)
+                        Repository.log_email_activity(campaign_id, c_obj.email, "SENT", "INFO", f"Dispatched via Gmail SMTP (Msg ID: {msg_id})", sent_at)
                         sent_in_batch += 1
                     except Exception as err:
                         err_str = str(err)
-                        logger.error(f"Gmail send failure: {err_str}")
+                        logger.error(f"Gmail SMTP send failure: {err_str}")
                         Repository.update_recipient_status(rec["recipient_id"], "FAILED", error_reason=err_str, sent_at=sent_at)
                         Repository.log_email_activity(campaign_id, c_obj.email, "FAILED", "ERROR", f"Failure: {err_str}", sent_at)
                         sent_in_batch += 1
             else:
-                warning_msg = "Google OAuth Credentials token expired or missing. Please upload credentials.json in 🔑 Gmail Accounts tab."
-                for rec in batch:
-                    sent_at = datetime.now().isoformat()
-                    Repository.update_recipient_status(rec["recipient_id"], "FAILED", error_reason=warning_msg, sent_at=sent_at)
-                    Repository.log_email_activity(campaign_id, rec["email"], "FAILED", "ERROR", warning_msg, sent_at)
-                    sent_in_batch += 1
+                creds = GmailOAuthManager.get_credentials_from_encrypted(refresh_tok)
+                if creds:
+                    gmail_client = GmailApiClient(creds)
+                    for rec in batch:
+                        c_obj = Contact(id=rec["contact_id"], email=rec["email"], company=rec.get("company", ""), contact_name=rec.get("contact_name", ""))
+                        rendered_body = template_service.render_html(template_body, c_obj)
+                        sent_at = datetime.now().isoformat()
+                        try:
+                            res = gmail_client.send_email(
+                                to_email=c_obj.email,
+                                subject="Frozen Shrimp Supply",
+                                body_content=rendered_body,
+                                is_html=True,
+                                attachments=[]
+                            )
+                            msg_id = res.get("message_id")
+                            Repository.update_recipient_status(rec["recipient_id"], "SENT", message_id=msg_id, sent_at=sent_at)
+                            Repository.log_email_activity(campaign_id, c_obj.email, "SENT", "INFO", f"Dispatched via Gmail API (Msg ID: {msg_id})", sent_at)
+                            sent_in_batch += 1
+                        except Exception as err:
+                            err_str = str(err)
+                            logger.error(f"Gmail send failure: {err_str}")
+                            Repository.update_recipient_status(rec["recipient_id"], "FAILED", error_reason=err_str, sent_at=sent_at)
+                            Repository.log_email_activity(campaign_id, c_obj.email, "FAILED", "ERROR", f"Failure: {err_str}", sent_at)
+                            sent_in_batch += 1
+                else:
+                    warning_msg = "Google OAuth Token expired or missing refresh_token. Please upload credentials.json or use Gmail App Password in 🔑 Gmail Accounts tab."
+                    for rec in batch:
+                        sent_at = datetime.now().isoformat()
+                        Repository.update_recipient_status(rec["recipient_id"], "FAILED", error_reason=warning_msg, sent_at=sent_at)
+                        Repository.log_email_activity(campaign_id, rec["email"], "FAILED", "ERROR", warning_msg, sent_at)
+                        sent_in_batch += 1
         else:
             if not refresh_tok and not is_dry_run:
-                warning_msg = "Gmail Account OAuth credentials.json is not connected yet! Upload credentials.json in 🔑 Gmail Accounts tab to enable live sending."
+                warning_msg = "Gmail Account is not connected! Save your App Password or credentials.json in 🔑 Gmail Accounts tab to send live emails."
             
             for rec in batch:
                 sent_at = datetime.now().isoformat()
