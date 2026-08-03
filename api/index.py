@@ -1087,15 +1087,23 @@ def process_campaign_batch(campaign_id: int, batch_size: int = 3):
                         logger.error(f"Gmail send failure: {err_str}")
                         Repository.update_recipient_status(rec["recipient_id"], "FAILED", error_reason=err_str, sent_at=sent_at)
                         Repository.log_email_activity(campaign_id, c_obj.email, "FAILED", "ERROR", f"Failure: {err_str}", sent_at)
+                        sent_in_batch += 1
+            else:
+                warning_msg = "Google OAuth Credentials token expired or missing. Please upload credentials.json in 🔑 Gmail Accounts tab."
+                for rec in batch:
+                    sent_at = datetime.now().isoformat()
+                    Repository.update_recipient_status(rec["recipient_id"], "FAILED", error_reason=warning_msg, sent_at=sent_at)
+                    Repository.log_email_activity(campaign_id, rec["email"], "FAILED", "ERROR", warning_msg, sent_at)
+                    sent_in_batch += 1
         else:
             if not refresh_tok and not is_dry_run:
-                warning_msg = "Gmail Account OAuth credentials.json is not connected yet! Please upload credentials.json in the 🔑 Gmail Accounts tab to enable live sending."
+                warning_msg = "Gmail Account OAuth credentials.json is not connected yet! Upload credentials.json in 🔑 Gmail Accounts tab to enable live sending."
             
             for rec in batch:
                 sent_at = datetime.now().isoformat()
                 msg_id = f"DRY_RUN_{rec['recipient_id']}"
                 Repository.update_recipient_status(rec["recipient_id"], "SENT", message_id=msg_id, sent_at=sent_at)
-                Repository.log_email_activity(campaign_id, rec["email"], "DRY_RUN", "INFO", f"Simulated send to {rec['email']} (credentials.json needed for live send)", sent_at)
+                Repository.log_email_activity(campaign_id, rec["email"], "DRY_RUN", "INFO", f"Simulated send to {rec['email']}", sent_at)
                 sent_in_batch += 1
 
         remaining_count = len(pending) - len(batch)
