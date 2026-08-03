@@ -77,6 +77,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         .btn-primary { background: var(--accent-blue); color: #11111b; }
         .btn-primary:hover { background: #b4befe; }
         .btn-secondary { background: rgba(255,255,255,0.1); color: var(--text-main); }
+        .btn-success { background: var(--accent-green); color: #11111b; }
         .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
         .form-group input, .form-group select, .form-group textarea { background: rgba(17, 17, 27, 0.8); border: 1px solid var(--border-color); color: var(--text-main); padding: 10px; border-radius: 6px; }
         .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
@@ -84,6 +85,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         .checkbox-group { flex-direction: row; align-items: center; gap: 8px; }
         .modal { display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); align-items:center; justify-content:center; z-index:100; }
         .modal-content { background:#181825; border:1px solid var(--border-color); padding:24px; border-radius:12px; width:450px; max-width:90%; }
+        .action-banner { background: rgba(137, 180, 250, 0.1); border: 1px solid var(--accent-blue); padding: 16px; border-radius: 10px; display: flex; gap: 12px; align-items: center; margin-bottom: 20px; }
     </style>
 </head>
 <body>
@@ -92,14 +94,14 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         <aside class="sidebar">
             <div class="brand">
                 <h2>✈ TradePilot</h2>
-                <span class="badge">Vercel & Local Remote</span>
+                <span class="badge">v1.2 Word & Bulk Edition</span>
             </div>
             <nav class="nav-menu">
                 <button class="nav-btn active" onclick="showTab('dashboard', event)">📊 Dashboard</button>
-                <button class="nav-btn" onclick="showTab('campaigns', event)">🚀 Campaigns</button>
+                <button class="nav-btn" onclick="showTab('campaigns', event)">🚀 Campaigns & Bulk Send</button>
                 <button class="nav-btn" onclick="showTab('contacts', event)">👥 Contacts</button>
                 <button class="nav-btn" onclick="showTab('gmail', event)">🔑 Gmail Accounts</button>
-                <button class="nav-btn" onclick="showTab('templates', event)">📝 Templates</button>
+                <button class="nav-btn" onclick="showTab('templates', event)">📝 Upload Word (.docx)</button>
                 <button class="nav-btn" onclick="showTab('exports', event)">📄 Email PDF/TXT</button>
             </nav>
         </aside>
@@ -184,22 +186,32 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             <!-- CAMPAIGNS TAB -->
             <section id="tab-campaigns" class="tab-content">
                 <header class="page-header">
-                    <h1>Campaign Management & PDF/TXT Exporter</h1>
+                    <h1>Campaign Management & Bulk Email Dispatcher</h1>
                 </header>
+
+                <div class="action-banner">
+                    <span style="font-size:24px;">📄</span>
+                    <div style="flex:1;">
+                        <strong>Need to use a Word (.docx) file template?</strong>
+                        <p style="font-size:12px; color:var(--text-muted);">Upload your Word document and TradePilot will format it with bullet points & paragraphs.</p>
+                    </div>
+                    <input type="file" id="docx-file-input-top" accept=".docx" style="display:none;" onchange="uploadDocxTemplate(event)">
+                    <button class="btn btn-primary" onclick="document.getElementById('docx-file-input-top').click()">📄 Upload Word (.docx) File</button>
+                </div>
 
                 <div class="grid-2col">
                     <div class="card-panel">
-                        <h3>Create & Export Campaign</h3>
+                        <h3>Create & Launch Campaign</h3>
                         <form id="campaign-form" onsubmit="handleCreateCampaign(event)">
                             <div class="form-group">
                                 <label>Campaign Name</label>
-                                <input type="text" id="camp-name" required placeholder="e.g. Frozen Shrimp Bulk Outreach">
+                                <input type="text" id="camp-name" required value="Frozen Shrimp Bulk Outreach">
                             </div>
                             <div class="form-group">
-                                <label>Target Recipients</label>
-                                <select id="camp-target-mode" onchange="toggleTargetMode()">
-                                    <option value="ALL">📢 Send to ALL Uploaded Contacts in Database (Bulk Campaign)</option>
-                                    <option value="SINGLE">🎯 Send to Specific Target Email Address</option>
+                                <label>Target Recipients Mode</label>
+                                <select id="camp-target-mode" onchange="toggleTargetMode()" style="border: 2px solid var(--accent-blue); font-weight:600;">
+                                    <option value="ALL">📢 BULK SEND: Send to ALL Uploaded Contacts in Database</option>
+                                    <option value="SINGLE">🎯 SINGLE TARGET: Send to Specific Email Address Only</option>
                                 </select>
                             </div>
                             <div class="form-group" id="target-email-container" style="display:none;">
@@ -211,7 +223,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                                 <select id="camp-account" required></select>
                             </div>
                             <div class="form-group">
-                                <label>Select Template (Word .docx or Saved Template)</label>
+                                <label>Select Email Template (Word .docx or Saved Template)</label>
                                 <select id="camp-template" required></select>
                             </div>
                             <div class="form-group">
@@ -232,7 +244,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                                 <input type="checkbox" id="camp-dryrun">
                                 <label for="camp-dryrun">Dry Run Mode (Simulate without sending)</label>
                             </div>
-                            <button type="submit" class="btn btn-primary">🚀 Send to All Contacts & Export PDF/TXT</button>
+                            <button type="submit" class="btn btn-success" style="width:100%; font-size:16px; padding:14px;">🚀 SEND BULK EMAILS TO ALL CONTACTS NOW</button>
                         </form>
                     </div>
 
@@ -283,13 +295,16 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             <!-- TEMPLATES TAB -->
             <section id="tab-templates" class="tab-content">
                 <header class="page-header">
-                    <h1>Email Template & Word (.docx) Editor</h1>
+                    <h1>Email Template & Word (.docx) Upload Center</h1>
                 </header>
                 <div class="card-panel">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-                        <h3>Saved Templates</h3>
+                    <div style="background:rgba(166,227,161,0.1); border:1px solid var(--accent-green); padding:16px; border-radius:8px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <strong>📄 Upload Word Document (.docx) Template</strong>
+                            <p style="font-size:12px; color:var(--text-muted);">Select any .docx file to automatically parse linebreaks, bullets, and signatures.</p>
+                        </div>
                         <input type="file" id="docx-file-input" accept=".docx" style="display:none;" onchange="uploadDocxTemplate(event)">
-                        <button class="btn btn-primary" onclick="document.getElementById('docx-file-input').click()">📄 Upload Word (.docx) File as Template</button>
+                        <button class="btn btn-success" onclick="document.getElementById('docx-file-input').click()">📄 Upload Word (.docx) File</button>
                     </div>
                     <form id="template-form" onsubmit="handleCreateTemplate(event)">
                         <div class="form-group">
