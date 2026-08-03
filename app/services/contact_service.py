@@ -1,3 +1,4 @@
+import csv
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 import pandas as pd
@@ -14,22 +15,42 @@ class ContactService:
         if not path.exists():
             raise FileNotFoundError(f"File not found: {filepath}")
 
+        df = None
         if path.suffix.lower() in [".xlsx", ".xls"]:
-            df = pd.read_excel(filepath)
+            try:
+                df = pd.read_excel(filepath)
+            except Exception as e:
+                logger.error(f"Excel read error: {e}")
+                raise ValueError(f"Could not read Excel file: {e}")
         elif path.suffix.lower() == ".csv":
-            df = pd.read_csv(filepath)
+            try:
+                df = pd.read_csv(filepath)
+            except Exception as e:
+                logger.warning(f"Pandas read_csv failed ({e}), using built-in csv fallback")
+                try:
+                    rows = []
+                    with open(filepath, "r", encoding="utf-8-sig", errors="ignore") as f:
+                        reader = csv.DictReader(f)
+                        for r in reader:
+                            rows.append(r)
+                    df = pd.DataFrame(rows)
+                except Exception as csv_err:
+                    raise ValueError(f"Could not read CSV file: {csv_err}")
         else:
             raise ValueError(f"Unsupported file format: {path.suffix}. Must be .xlsx, .xls, or .csv")
+
+        if df is None or df.empty:
+            return [], ["Uploaded file is empty."]
 
         # Standardize column headers (case-insensitive strip)
         column_map = {}
         for col in df.columns:
             cleaned = str(col).strip().lower()
-            if cleaned in ["company", "company name", "organization"]:
+            if cleaned in ["company", "company name", "organization", "company_name"]:
                 column_map[col] = "company"
-            elif cleaned in ["contact", "contact name", "name", "full name", "person"]:
+            elif cleaned in ["contact", "contact name", "name", "full name", "person", "contact_name", "first_name"]:
                 column_map[col] = "contact_name"
-            elif cleaned in ["email", "e-mail", "email address"]:
+            elif cleaned in ["email", "e-mail", "email address", "email_address", "mail"]:
                 column_map[col] = "email"
             elif cleaned in ["country", "nation"]:
                 column_map[col] = "country"

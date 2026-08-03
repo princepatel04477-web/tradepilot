@@ -97,7 +97,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         <aside class="sidebar">
             <div class="brand">
                 <h2>✈ TradePilot</h2>
-                <span class="badge">v1.7 Optimized Timeout Shield</span>
+                <span class="badge">v1.8 Fail-Safe Resilient</span>
             </div>
             <nav class="nav-menu">
                 <button class="nav-btn active" onclick="showTab('dashboard', event)">📊 Dashboard</button>
@@ -630,10 +630,16 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                     loadStats();
                     loadActivityLogs();
                 } else {
-                    const errText = await res.text();
+                    let errMsg = "Internal Server Error";
+                    try {
+                        const jsonErr = await res.json();
+                        errMsg = jsonErr.detail || jsonErr.message || JSON.stringify(jsonErr);
+                    } catch (parseErr) {
+                        errMsg = await res.text();
+                    }
                     btn.disabled = false;
                     btn.innerText = "🚀 SEND EMAILS NOW VIA GMAIL API!";
-                    alert("❌ Campaign dispatch error: " + errText);
+                    alert("❌ Campaign dispatch error: " + errMsg);
                 }
             } catch (err) {
                 btn.disabled = false;
@@ -772,15 +778,19 @@ def add_single_contact(
 
 @app.post("/api/contacts/upload")
 async def upload_contacts(file: UploadFile = File(...)):
-    temp_dir = EXPORTS_DIR / "uploads"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    temp_path = temp_dir / file.filename
+    try:
+        temp_dir = EXPORTS_DIR / "uploads"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = temp_dir / file.filename
 
-    with open(temp_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
-    res = ContactService.import_contacts_to_db(str(temp_path))
-    return res
+        res = ContactService.import_contacts_to_db(str(temp_path))
+        return res
+    except Exception as e:
+        logger.error(f"Contact upload error: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to import contacts file: {e}")
 
 @app.get("/api/templates")
 def get_templates():
@@ -857,131 +867,136 @@ async def create_and_send_all_in_one(
     max_delay: float = Form(2.0),
     is_dry_run: bool = Form(False)
 ):
-    template_id = 1
-    # 1. Parse Word File if uploaded
-    if docx_file and docx_file.filename:
-        temp_dir = EXPORTS_DIR / "uploads"
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        docx_path = temp_dir / docx_file.filename
-        with open(docx_path, "wb") as buffer:
-            shutil.copyfileobj(docx_file.file, buffer)
-        
-        try:
-            import docx
-            doc = docx.Document(str(docx_path))
-            paras = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-            doc_text = "\n\n".join(paras)
+    try:
+        template_id = 1
+        # 1. Parse Word File if uploaded
+        if docx_file and docx_file.filename and docx_file.filename.strip():
+            temp_dir = EXPORTS_DIR / "uploads"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            docx_path = temp_dir / docx_file.filename
+            with open(docx_path, "wb") as buffer:
+                shutil.copyfileobj(docx_file.file, buffer)
             
-            tpl = EmailTemplate(
-                name=f"Word: {Path(docx_file.filename).stem}",
-                subject="Frozen Shrimp Supply",
-                body_content=doc_text,
-                is_html=True
-            )
-            template_id = Repository.add_template(tpl)
-        except Exception as e:
-            logger.error(f"Docx parse error: {e}")
-
-    # 2. Import Contacts File if uploaded
-    if contacts_file and contacts_file.filename:
-        temp_dir = EXPORTS_DIR / "uploads"
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        contacts_path = temp_dir / contacts_file.filename
-        with open(contacts_path, "wb") as buffer:
-            shutil.copyfileobj(contacts_file.file, buffer)
-        ContactService.import_contacts_to_db(str(contacts_path))
-
-    # 3. Determine Contacts Target
-    if target_email and target_email.strip():
-        email_clean = target_email.strip()
-        c = Contact(email=email_clean, company="Target Prospect", contact_name="Prospect")
-        Repository.add_contacts_batch([c])
-        contacts = Repository.get_contacts(search=email_clean)
-        contact_ids = [contacts[0].id] if contacts else []
-    else:
-        contacts = Repository.get_contacts(status="Active")
-        contact_ids = [c.id for c in contacts]
-
-    if not contact_ids:
-        raise HTTPException(status_code=400, detail="No contacts found to send emails.")
-
-    account = Repository.get_accounts()
-    account_id = account[0].id if account else None
-
-    campaign = Campaign(
-        name=name,
-        account_id=account_id,
-        template_id=template_id,
-        status="RUNNING",
-        min_delay_sec=min_delay,
-        max_delay_sec=max_delay,
-        is_dry_run=is_dry_run,
-        subject_override="Frozen Shrimp Supply",
-        total_recipients=len(contact_ids)
-    )
-
-    campaign_id = Repository.create_campaign(campaign, contact_ids)
-    export_res = PerEmailExporter.export_campaign_emails(campaign_id)
-
-    # Synchronous direct Gmail API email dispatch optimized for Vercel
-    sent_count = 0
-    failed_count = 0
-    recipients = Repository.get_pending_recipients(campaign_id)
-
-    if not is_dry_run and account and account.refresh_token_encrypted:
-        creds = GmailOAuthManager.get_credentials_from_encrypted(account.refresh_token_encrypted)
-        if creds:
-            gmail_client = GmailApiClient(creds)
-            template = Repository.get_template_by_id(template_id)
-            template_body = template.body_content if template else "Hello {{Contact}},\n\nRe: {{Company}}"
-
-            for rec in recipients:
-                contact_obj = Contact(id=rec["contact_id"], email=rec["email"], company=rec.get("company", ""), contact_name=rec.get("contact_name", ""))
-                rendered_body = template_service.render_html(template_body, contact_obj)
-                sent_at = datetime.now().isoformat()
+            try:
+                import docx
+                doc = docx.Document(str(docx_path))
+                paras = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+                doc_text = "\n\n".join(paras)
                 
-                # Cap delay on serverless Vercel to avoid gateway timeout
-                actual_delay = min(min_delay, 0.3) if IS_VERCEL else min_delay
-                if actual_delay > 0 and sent_count > 0:
-                    time.sleep(actual_delay)
+                tpl = EmailTemplate(
+                    name=f"Word: {Path(docx_file.filename).stem}",
+                    subject="Frozen Shrimp Supply",
+                    body_content=doc_text,
+                    is_html=True
+                )
+                template_id = Repository.add_template(tpl)
+            except Exception as e:
+                logger.error(f"Docx parse warning: {e}")
 
-                try:
-                    res = gmail_client.send_email(
-                        to_email=contact_obj.email,
-                        subject="Frozen Shrimp Supply",
-                        body_content=rendered_body,
-                        is_html=True,
-                        attachments=[]
-                    )
-                    msg_id = res.get("message_id")
-                    Repository.update_recipient_status(rec["recipient_id"], "SENT", message_id=msg_id, sent_at=sent_at)
-                    Repository.log_email_activity(campaign_id, contact_obj.email, "SENT", "INFO", f"Dispatched via Gmail API (Msg ID: {msg_id})", sent_at)
-                    sent_count += 1
-                except Exception as send_err:
-                    err_str = str(send_err)
-                    logger.error(f"Failed to send email to {contact_obj.email}: {err_str}")
-                    Repository.update_recipient_status(rec["recipient_id"], "FAILED", error_reason=err_str, sent_at=sent_at)
-                    Repository.log_email_activity(campaign_id, contact_obj.email, "FAILED", "ERROR", f"Failure: {err_str}", sent_at)
-                    failed_count += 1
-    else:
-        # Dry Run Mode or fallback simulation
-        for rec in recipients:
-            sent_at = datetime.now().isoformat()
-            msg_id = f"DRY_RUN_{rec['recipient_id']}"
-            Repository.update_recipient_status(rec["recipient_id"], "SENT", message_id=msg_id, sent_at=sent_at)
-            Repository.log_email_activity(campaign_id, rec["email"], "DRY_RUN", "INFO", f"Simulated send to {rec['email']}", sent_at)
-            sent_count += 1
+        # 2. Import Contacts File if uploaded
+        if contacts_file and contacts_file.filename and contacts_file.filename.strip():
+            temp_dir = EXPORTS_DIR / "uploads"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            contacts_path = temp_dir / contacts_file.filename
+            with open(contacts_path, "wb") as buffer:
+                shutil.copyfileobj(contacts_file.file, buffer)
+            try:
+                ContactService.import_contacts_to_db(str(contacts_path))
+            except Exception as import_err:
+                logger.error(f"Contact import error: {import_err}")
+                raise HTTPException(status_code=400, detail=f"Contacts file import failed: {import_err}")
 
-    Repository.update_campaign_status(campaign_id, "COMPLETED")
+        # 3. Determine Contacts Target
+        if target_email and target_email.strip():
+            email_clean = target_email.strip()
+            c = Contact(email=email_clean, company="Target Prospect", contact_name="Prospect")
+            Repository.add_contacts_batch([c])
+            contacts = Repository.get_contacts(search=email_clean)
+            contact_ids = [contacts[0].id] if contacts else []
+        else:
+            contacts = Repository.get_contacts(status="Active")
+            contact_ids = [c.id for c in contacts]
 
-    return {
-        "campaign_id": campaign_id,
-        "status": "COMPLETED",
-        "total_recipients": len(contact_ids),
-        "sent_count": sent_count,
-        "failed_count": failed_count,
-        "pdf_txt_export": export_res
-    }
+        if not contact_ids:
+            raise HTTPException(status_code=400, detail="No active contacts found in database. Please upload contacts file.")
+
+        account = Repository.get_accounts()
+        account_id = account[0].id if account else None
+
+        campaign = Campaign(
+            name=name,
+            account_id=account_id,
+            template_id=template_id,
+            status="RUNNING",
+            min_delay_sec=min_delay,
+            max_delay_sec=max_delay,
+            is_dry_run=is_dry_run,
+            subject_override="Frozen Shrimp Supply",
+            total_recipients=len(contact_ids)
+        )
+
+        campaign_id = Repository.create_campaign(campaign, contact_ids)
+        export_res = PerEmailExporter.export_campaign_emails(campaign_id)
+
+        # Synchronous direct Gmail API email dispatch optimized for Vercel
+        sent_count = 0
+        failed_count = 0
+        recipients = Repository.get_pending_recipients(campaign_id)
+
+        if not is_dry_run and account and account.refresh_token_encrypted:
+            creds = GmailOAuthManager.get_credentials_from_encrypted(account.refresh_token_encrypted)
+            if creds:
+                gmail_client = GmailApiClient(creds)
+                template = Repository.get_template_by_id(template_id)
+                template_body = template.body_content if template else "Hello {{Contact}},\n\nRe: {{Company}}"
+
+                for rec in recipients:
+                    contact_obj = Contact(id=rec["contact_id"], email=rec["email"], company=rec.get("company", ""), contact_name=rec.get("contact_name", ""))
+                    rendered_body = template_service.render_html(template_body, contact_obj)
+                    sent_at = datetime.now().isoformat()
+                    
+                    try:
+                        res = gmail_client.send_email(
+                            to_email=contact_obj.email,
+                            subject="Frozen Shrimp Supply",
+                            body_content=rendered_body,
+                            is_html=True,
+                            attachments=[]
+                        )
+                        msg_id = res.get("message_id")
+                        Repository.update_recipient_status(rec["recipient_id"], "SENT", message_id=msg_id, sent_at=sent_at)
+                        Repository.log_email_activity(campaign_id, contact_obj.email, "SENT", "INFO", f"Dispatched via Gmail API (Msg ID: {msg_id})", sent_at)
+                        sent_count += 1
+                    except Exception as send_err:
+                        err_str = str(send_err)
+                        logger.error(f"Failed to send email to {contact_obj.email}: {err_str}")
+                        Repository.update_recipient_status(rec["recipient_id"], "FAILED", error_reason=err_str, sent_at=sent_at)
+                        Repository.log_email_activity(campaign_id, contact_obj.email, "FAILED", "ERROR", f"Failure: {err_str}", sent_at)
+                        failed_count += 1
+        else:
+            # Dry Run Mode or simulation fallback
+            for rec in recipients:
+                sent_at = datetime.now().isoformat()
+                msg_id = f"DRY_RUN_{rec['recipient_id']}"
+                Repository.update_recipient_status(rec["recipient_id"], "SENT", message_id=msg_id, sent_at=sent_at)
+                Repository.log_email_activity(campaign_id, rec["email"], "DRY_RUN", "INFO", f"Simulated send to {rec['email']}", sent_at)
+                sent_count += 1
+
+        Repository.update_campaign_status(campaign_id, "COMPLETED")
+
+        return {
+            "campaign_id": campaign_id,
+            "status": "COMPLETED",
+            "total_recipients": len(contact_ids),
+            "sent_count": sent_count,
+            "failed_count": failed_count,
+            "pdf_txt_export": export_res
+        }
+    except HTTPException:
+        raise
+    except Exception as general_err:
+        logger.error(f"Campaign creation crash: {general_err}")
+        raise HTTPException(status_code=400, detail=f"Campaign error: {general_err}")
 
 @app.get("/api/campaigns")
 def get_campaigns():
