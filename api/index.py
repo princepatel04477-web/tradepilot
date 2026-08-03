@@ -1,5 +1,6 @@
 import os
 import shutil
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
@@ -7,7 +8,7 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTa
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.core.constants import EXPORTS_DIR
+from app.core.constants import EXPORTS_DIR, IS_VERCEL
 from app.database import init_db, Repository
 from app.models.contact import Contact
 from app.models.template import EmailTemplate
@@ -96,7 +97,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         <aside class="sidebar">
             <div class="brand">
                 <h2>✈ TradePilot</h2>
-                <span class="badge">v1.6 Synchronous Gmail Dispatch</span>
+                <span class="badge">v1.7 Optimized Timeout Shield</span>
             </div>
             <nav class="nav-menu">
                 <button class="nav-btn active" onclick="showTab('dashboard', event)">📊 Dashboard</button>
@@ -230,13 +231,14 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                                     <div class="form-row">
                                         <div style="flex:1;">
                                             <label style="font-size:11px; color:var(--text-muted);">Min Delay (s)</label>
-                                            <input type="number" id="aio-min-delay" value="2" min="0">
+                                            <input type="number" id="aio-min-delay" value="1" min="0">
                                         </div>
                                         <div style="flex:1;">
                                             <label style="font-size:11px; color:var(--text-muted);">Max Delay (s)</label>
-                                            <input type="number" id="aio-max-delay" value="5" min="0">
+                                            <input type="number" id="aio-max-delay" value="2" min="0">
                                         </div>
                                     </div>
+                                    <span style="font-size:11px; color:var(--accent-green); margin-top:2px;">Tip: Keep delay at 1-2s for fast Vercel bulk dispatch!</span>
                                 </div>
                                 <div class="form-group checkbox-group" style="margin-top:10px;">
                                     <input type="checkbox" id="aio-dryrun">
@@ -619,17 +621,19 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
 
             try {
                 const res = await fetch('/api/campaigns/create-and-send', { method: 'POST', body: formData });
-                const data = await res.json();
-                btn.disabled = false;
-                btn.innerText = "🚀 SEND EMAILS NOW VIA GMAIL API!";
-                
                 if (res.ok) {
+                    const data = await res.json();
+                    btn.disabled = false;
+                    btn.innerText = "🚀 SEND EMAILS NOW VIA GMAIL API!";
                     alert(`✅ EMAILS DISPATCHED SUCCESSFULLY! Sent to ${data.sent_count} / ${data.total_recipients} recipient(s). Download per-email PDF/TXT bundle in Exports tab.`);
                     loadCampaigns();
                     loadStats();
                     loadActivityLogs();
                 } else {
-                    alert("❌ Campaign dispatch error: " + (data.detail || "Failed to send email"));
+                    const errText = await res.text();
+                    btn.disabled = false;
+                    btn.innerText = "🚀 SEND EMAILS NOW VIA GMAIL API!";
+                    alert("❌ Campaign dispatch error: " + errText);
                 }
             } catch (err) {
                 btn.disabled = false;
@@ -849,8 +853,8 @@ async def create_and_send_all_in_one(
     docx_file: Optional[UploadFile] = File(None),
     contacts_file: Optional[UploadFile] = File(None),
     target_email: Optional[str] = Form(None),
-    min_delay: float = Form(2.0),
-    max_delay: float = Form(5.0),
+    min_delay: float = Form(1.0),
+    max_delay: float = Form(2.0),
     is_dry_run: bool = Form(False)
 ):
     template_id = 1
@@ -919,7 +923,7 @@ async def create_and_send_all_in_one(
     campaign_id = Repository.create_campaign(campaign, contact_ids)
     export_res = PerEmailExporter.export_campaign_emails(campaign_id)
 
-    # Synchronous direct Gmail API email dispatch on Vercel
+    # Synchronous direct Gmail API email dispatch optimized for Vercel
     sent_count = 0
     failed_count = 0
     recipients = Repository.get_pending_recipients(campaign_id)
@@ -935,6 +939,12 @@ async def create_and_send_all_in_one(
                 contact_obj = Contact(id=rec["contact_id"], email=rec["email"], company=rec.get("company", ""), contact_name=rec.get("contact_name", ""))
                 rendered_body = template_service.render_html(template_body, contact_obj)
                 sent_at = datetime.now().isoformat()
+                
+                # Cap delay on serverless Vercel to avoid gateway timeout
+                actual_delay = min(min_delay, 0.3) if IS_VERCEL else min_delay
+                if actual_delay > 0 and sent_count > 0:
+                    time.sleep(actual_delay)
+
                 try:
                     res = gmail_client.send_email(
                         to_email=contact_obj.email,
@@ -954,7 +964,7 @@ async def create_and_send_all_in_one(
                     Repository.log_email_activity(campaign_id, contact_obj.email, "FAILED", "ERROR", f"Failure: {err_str}", sent_at)
                     failed_count += 1
     else:
-        # Dry Run Mode or fallback
+        # Dry Run Mode or fallback simulation
         for rec in recipients:
             sent_at = datetime.now().isoformat()
             msg_id = f"DRY_RUN_{rec['recipient_id']}"
