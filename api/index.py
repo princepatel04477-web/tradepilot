@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.constants import EXPORTS_DIR, IS_VERCEL
-from app.database import init_db, Repository
+from app.database import init_db, Repository, db_manager
 from app.models.contact import Contact
 from app.models.template import EmailTemplate
 from app.models.campaign import Campaign
@@ -99,7 +99,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         <aside class="sidebar">
             <div class="brand">
                 <h2>✈ TradePilot</h2>
-                <span class="badge">v2.1 Account Fixed</span>
+                <span class="badge">v2.2 Zero Dependency Batch</span>
             </div>
             <nav class="nav-menu">
                 <button class="nav-btn active" onclick="showTab('dashboard', event)">📊 Dashboard</button>
@@ -635,7 +635,6 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
 
                 pText.innerText = `Sending 0 of ${total} emails via Gmail API...`;
 
-                // Loop sending in small chunk batches (3 emails per chunk) to eliminate Vercel timeouts!
                 let remaining = total;
                 let totalSent = 0;
                 let isComplete = false;
@@ -983,12 +982,14 @@ def process_campaign_batch(campaign_id: int, batch_size: int = 3):
         pending = Repository.get_pending_recipients(campaign_id)
         if not pending:
             Repository.update_campaign_status(campaign_id, "COMPLETED")
-            stats = Repository.get_campaign_stats(campaign_id)
+            with db_manager.get_connection() as conn:
+                sent_cnt = conn.execute("SELECT COUNT(*) as c FROM campaign_recipients WHERE campaign_id=? AND status='SENT'", (campaign_id,)).fetchone()["c"]
+                tot_cnt = conn.execute("SELECT COUNT(*) as c FROM campaign_recipients WHERE campaign_id=?", (campaign_id,)).fetchone()["c"]
             return {
                 "sent_in_batch": 0,
                 "remaining": 0,
-                "sent_count": stats.get("sent_count", 0),
-                "total": stats.get("total", 0),
+                "sent_count": sent_cnt,
+                "total": tot_cnt,
                 "is_complete": True
             }
 
@@ -1044,12 +1045,15 @@ def process_campaign_batch(campaign_id: int, batch_size: int = 3):
         if remaining_count <= 0:
             Repository.update_campaign_status(campaign_id, "COMPLETED")
 
-        stats = Repository.get_campaign_stats(campaign_id)
+        with db_manager.get_connection() as conn:
+            sent_cnt = conn.execute("SELECT COUNT(*) as c FROM campaign_recipients WHERE campaign_id=? AND status='SENT'", (campaign_id,)).fetchone()["c"]
+            tot_cnt = conn.execute("SELECT COUNT(*) as c FROM campaign_recipients WHERE campaign_id=?", (campaign_id,)).fetchone()["c"]
+
         return {
             "sent_in_batch": sent_in_batch,
             "remaining": max(0, remaining_count),
-            "sent_count": stats.get("sent_count", 0),
-            "total": stats.get("total", 0),
+            "sent_count": sent_cnt,
+            "total": tot_cnt,
             "is_complete": (remaining_count <= 0)
         }
     except Exception as batch_err:
