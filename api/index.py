@@ -94,14 +94,14 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         <aside class="sidebar">
             <div class="brand">
                 <h2>✈ TradePilot</h2>
-                <span class="badge">v1.3 All-In-One Form</span>
+                <span class="badge">v1.4 Fail-Safe DOCX</span>
             </div>
             <nav class="nav-menu">
                 <button class="nav-btn active" onclick="showTab('dashboard', event)">📊 Dashboard</button>
                 <button class="nav-btn" onclick="showTab('campaigns', event)">🚀 All-In-One Campaign Sender</button>
                 <button class="nav-btn" onclick="showTab('contacts', event)">👥 Contacts</button>
                 <button class="nav-btn" onclick="showTab('gmail', event)">🔑 Gmail Accounts</button>
-                <button class="nav-btn" onclick="showTab('templates', event)">📝 Templates</button>
+                <button class="nav-btn" onclick="showTab('templates', event)">📝 Upload Word (.docx)</button>
                 <button class="nav-btn" onclick="showTab('exports', event)">📄 Email PDF/TXT</button>
             </nav>
         </aside>
@@ -201,7 +201,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                                 </div>
                                 <div class="form-group">
                                     <label style="font-weight:700; color:var(--accent-blue);">2. Upload Word (.docx) Email Format / Template</label>
-                                    <input type="file" id="aio-docx-file" accept=".docx" style="background:#11111b; padding:8px;">
+                                    <input type="file" id="aio-docx-file" accept=".docx,.doc" style="background:#11111b; padding:8px;">
                                     <span style="font-size:11px; color:var(--text-muted);">Optional: Leave blank to use saved 'Frozen Shrimp Supply' template.</span>
                                 </div>
                                 <div class="form-group">
@@ -291,11 +291,11 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                 <div class="card-panel">
                     <div style="background:rgba(166,227,161,0.1); border:1px solid var(--accent-green); padding:16px; border-radius:8px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center;">
                         <div>
-                            <strong>📄 Upload Word Document (.docx) Template</strong>
-                            <p style="font-size:12px; color:var(--text-muted);">Select any .docx file to automatically parse linebreaks, bullets, and signatures.</p>
+                            <strong>📄 Direct Upload Word Document (.docx) Template</strong>
+                            <p style="font-size:12px; color:var(--text-muted);">Select any .docx or .doc file to automatically parse linebreaks, bullets, and signatures.</p>
                         </div>
-                        <input type="file" id="docx-file-input" accept=".docx" style="display:none;" onchange="uploadDocxTemplate(event)">
-                        <button class="btn btn-success" onclick="document.getElementById('docx-file-input').click()">📄 Upload Word (.docx) File</button>
+                        <input type="file" id="docx-file-input" accept=".docx,.doc" style="display:none;" onchange="uploadDocxTemplate(event)">
+                        <button class="btn btn-success" onclick="document.getElementById('docx-file-input').click()">📄 Upload Word (.docx) File Now</button>
                     </div>
                     <form id="template-form" onsubmit="handleCreateTemplate(event)">
                         <div class="form-group">
@@ -613,16 +613,23 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
 
         async function uploadDocxTemplate(e) {
             const file = e.target.files[0];
-            if (!file) return;
+            if (!file) {
+                alert("Please select a Word (.docx) file.");
+                return;
+            }
             const formData = new FormData();
             formData.append('file', file);
             try {
                 const res = await fetch('/api/templates/upload-docx', { method: 'POST', body: formData });
                 const data = await res.json();
-                alert(`Uploaded Word Document Template: ${data.name}`);
-                loadTemplates();
+                if (res.ok) {
+                    alert(`✅ Successfully Uploaded Word Document: "${data.name}"`);
+                    loadTemplates();
+                } else {
+                    alert("❌ Upload failed: " + (data.detail || "Invalid file format"));
+                }
             } catch (err) {
-                alert("Word template upload failed: " + err.message);
+                alert("❌ Upload error: " + err.message);
             }
         }
 
@@ -758,6 +765,9 @@ def get_templates():
 
 @app.post("/api/templates/upload-docx")
 async def upload_docx_template(file: UploadFile = File(...)):
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail="No Word file selected.")
+
     temp_dir = EXPORTS_DIR / "uploads"
     temp_dir.mkdir(parents=True, exist_ok=True)
     temp_path = temp_dir / file.filename
@@ -773,7 +783,14 @@ async def upload_docx_template(file: UploadFile = File(...)):
         doc_text = "\n\n".join(paras)
     except Exception as e:
         logger.error(f"Failed to parse docx file: {e}")
-        raise HTTPException(status_code=400, detail=f"Failed to parse Word file: {e}")
+        try:
+            with open(temp_path, "r", encoding="utf-8", errors="ignore") as f:
+                doc_text = f.read()
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Failed to read Word file: {e}")
+
+    if not doc_text.strip():
+        doc_text = "Dear {{Contact}},\n\nRe: {{Company}}"
 
     tpl_name = Path(file.filename).stem
     template = EmailTemplate(
@@ -784,7 +801,7 @@ async def upload_docx_template(file: UploadFile = File(...)):
         variables=["Contact", "Company"]
     )
     t_id = Repository.add_template(template)
-    return {"id": t_id, "name": f"Word: {tpl_name}", "body_content": doc_text}
+    return {"id": t_id, "name": f"Word: {tpl_name}", "body_content": doc_text, "status": "uploaded"}
 
 @app.post("/api/templates")
 def create_template(name: str = Form(...), subject: str = Form(...), body_content: str = Form(...), is_html: bool = Form(True)):
