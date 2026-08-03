@@ -99,7 +99,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         <aside class="sidebar">
             <div class="brand">
                 <h2>✈ TradePilot</h2>
-                <span class="badge">v2.2 Zero Dependency Batch</span>
+                <span class="badge">v2.3 Live Gmail Dispatch</span>
             </div>
             <nav class="nav-menu">
                 <button class="nav-btn active" onclick="showTab('dashboard', event)">📊 Dashboard</button>
@@ -620,7 +620,8 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                 formData.append('target_email', document.getElementById('aio-single-email').value);
             }
 
-            formData.append('is_dry_run', document.getElementById('aio-dryrun').checked);
+            const isDryRunChecked = document.getElementById('aio-dryrun').checked;
+            formData.append('is_dry_run', isDryRunChecked ? "true" : "false");
 
             try {
                 const res = await fetch('/api/campaigns/create-and-send', { method: 'POST', body: formData });
@@ -664,7 +665,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                 btn.disabled = false;
                 btn.innerText = "🚀 SEND EMAILS NOW VIA GMAIL API!";
                 pText.innerText = `✅ ALL ${totalSent} EMAILS DISPATCHED LIVE VIA GMAIL API!`;
-                alert(`✅ ALL ${totalSent} EMAILS DISPATCHED LIVE VIA GMAIL API! Download PDF & TXT copies in Exports tab.`);
+                alert(`✅ ALL ${totalSent} EMAILS DISPATCHED LIVE VIA GMAIL API! Check your Gmail Sent folder! Download PDF & TXT copies in Exports tab.`);
 
             } catch (err) {
                 btn.disabled = false;
@@ -891,9 +892,11 @@ async def create_and_send_all_in_one(
     target_email: Optional[str] = Form(None),
     min_delay: float = Form(1.0),
     max_delay: float = Form(2.0),
-    is_dry_run: bool = Form(False)
+    is_dry_run: str = Form("false")
 ):
     try:
+        is_dry_run_bool = str(is_dry_run).lower() in ["true", "1", "yes"]
+
         template_id = 1
         # 1. Parse Word File if uploaded
         if docx_file and docx_file.filename and docx_file.filename.strip():
@@ -956,7 +959,7 @@ async def create_and_send_all_in_one(
             status="QUEUED",
             min_delay_sec=min_delay,
             max_delay_sec=max_delay,
-            is_dry_run=is_dry_run,
+            is_dry_run=is_dry_run_bool,
             subject_override="Frozen Shrimp Supply",
             total_recipients=len(contact_ids)
         )
