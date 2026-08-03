@@ -85,7 +85,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         .checkbox-group { flex-direction: row; align-items: center; gap: 8px; }
         .modal { display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); align-items:center; justify-content:center; z-index:100; }
         .modal-content { background:#181825; border:1px solid var(--border-color); padding:24px; border-radius:12px; width:450px; max-width:90%; }
-        .action-banner { background: rgba(137, 180, 250, 0.1); border: 1px solid var(--accent-blue); padding: 16px; border-radius: 10px; display: flex; gap: 12px; align-items: center; margin-bottom: 20px; }
+        .all-in-one-panel { background: rgba(166, 227, 161, 0.05); border: 2px solid var(--accent-green); padding: 24px; border-radius: 12px; margin-bottom: 20px; }
     </style>
 </head>
 <body>
@@ -94,14 +94,14 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         <aside class="sidebar">
             <div class="brand">
                 <h2>✈ TradePilot</h2>
-                <span class="badge">v1.2 Word & Bulk Edition</span>
+                <span class="badge">v1.3 All-In-One Form</span>
             </div>
             <nav class="nav-menu">
                 <button class="nav-btn active" onclick="showTab('dashboard', event)">📊 Dashboard</button>
-                <button class="nav-btn" onclick="showTab('campaigns', event)">🚀 Campaigns & Bulk Send</button>
+                <button class="nav-btn" onclick="showTab('campaigns', event)">🚀 All-In-One Campaign Sender</button>
                 <button class="nav-btn" onclick="showTab('contacts', event)">👥 Contacts</button>
                 <button class="nav-btn" onclick="showTab('gmail', event)">🔑 Gmail Accounts</button>
-                <button class="nav-btn" onclick="showTab('templates', event)">📝 Upload Word (.docx)</button>
+                <button class="nav-btn" onclick="showTab('templates', event)">📝 Templates</button>
                 <button class="nav-btn" onclick="showTab('exports', event)">📄 Email PDF/TXT</button>
             </nav>
         </aside>
@@ -186,83 +186,74 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             <!-- CAMPAIGNS TAB -->
             <section id="tab-campaigns" class="tab-content">
                 <header class="page-header">
-                    <h1>Campaign Management & Bulk Email Dispatcher</h1>
+                    <h1>⚡ All-In-One Bulk Campaign Sender</h1>
+                    <p class="subtitle">Upload your Word (.docx) template + Upload Contacts + Hit Send all right here in one step!</p>
                 </header>
 
-                <div class="action-banner">
-                    <span style="font-size:24px;">📄</span>
-                    <div style="flex:1;">
-                        <strong>Need to use a Word (.docx) file template?</strong>
-                        <p style="font-size:12px; color:var(--text-muted);">Upload your Word document and TradePilot will format it with bullet points & paragraphs.</p>
-                    </div>
-                    <input type="file" id="docx-file-input-top" accept=".docx" style="display:none;" onchange="uploadDocxTemplate(event)">
-                    <button class="btn btn-primary" onclick="document.getElementById('docx-file-input-top').click()">📄 Upload Word (.docx) File</button>
+                <div class="all-in-one-panel">
+                    <h3 style="color:var(--accent-green); margin-bottom:15px;">🚀 Single-Form Bulk Outreach Launcher</h3>
+                    <form id="all-in-one-form" onsubmit="handleAllInOneSend(event)">
+                        <div class="grid-2col">
+                            <div>
+                                <div class="form-group">
+                                    <label style="font-weight:700;">1. Campaign Name</label>
+                                    <input type="text" id="aio-name" required value="Frozen Shrimp Outreach">
+                                </div>
+                                <div class="form-group">
+                                    <label style="font-weight:700; color:var(--accent-blue);">2. Upload Word (.docx) Email Format / Template</label>
+                                    <input type="file" id="aio-docx-file" accept=".docx" style="background:#11111b; padding:8px;">
+                                    <span style="font-size:11px; color:var(--text-muted);">Optional: Leave blank to use saved 'Frozen Shrimp Supply' template.</span>
+                                </div>
+                                <div class="form-group">
+                                    <label style="font-weight:700; color:var(--accent-green);">3. Upload Contacts List (Excel / CSV)</label>
+                                    <input type="file" id="aio-contacts-file" accept=".csv,.xlsx,.xls" style="background:#11111b; padding:8px;">
+                                    <span style="font-size:11px; color:var(--text-muted);">Optional: Leave blank to send to all existing contacts in database.</span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div class="form-group">
+                                    <label style="font-weight:700;">4. Target Email Mode</label>
+                                    <select id="aio-target-mode" onchange="toggleAioTargetMode()">
+                                        <option value="ALL">📢 BULK SEND: Send to ALL Uploaded Contacts in List</option>
+                                        <option value="SINGLE">🎯 SINGLE TARGET: Send to One Specific Target Email</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" id="aio-single-email-container" style="display:none;">
+                                    <label>Specific Target Email Address</label>
+                                    <input type="email" id="aio-single-email" placeholder="e.g. enquiries@dibellacoffee.com">
+                                </div>
+                                <div class="form-group">
+                                    <label style="font-weight:700;">5. Sender Email Account</label>
+                                    <select id="camp-account" required></select>
+                                </div>
+                                <div class="form-group checkbox-group" style="margin-top:20px;">
+                                    <input type="checkbox" id="aio-dryrun">
+                                    <label for="aio-dryrun" style="font-weight:600;">Dry Run Mode (Simulate send)</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-success" style="width:100%; font-size:18px; padding:16px; margin-top:15px; border-radius:10px; cursor:pointer;">
+                            🚀 UPLOAD WORD FILE, IMPORT CONTACTS & BULK SEND NOW!
+                        </button>
+                    </form>
                 </div>
 
-                <div class="grid-2col">
-                    <div class="card-panel">
-                        <h3>Create & Launch Campaign</h3>
-                        <form id="campaign-form" onsubmit="handleCreateCampaign(event)">
-                            <div class="form-group">
-                                <label>Campaign Name</label>
-                                <input type="text" id="camp-name" required value="Frozen Shrimp Bulk Outreach">
-                            </div>
-                            <div class="form-group">
-                                <label>Target Recipients Mode</label>
-                                <select id="camp-target-mode" onchange="toggleTargetMode()" style="border: 2px solid var(--accent-blue); font-weight:600;">
-                                    <option value="ALL">📢 BULK SEND: Send to ALL Uploaded Contacts in Database</option>
-                                    <option value="SINGLE">🎯 SINGLE TARGET: Send to Specific Email Address Only</option>
-                                </select>
-                            </div>
-                            <div class="form-group" id="target-email-container" style="display:none;">
-                                <label>Specific Target Email</label>
-                                <input type="email" id="camp-target-email" placeholder="e.g. buyer@importer.com">
-                            </div>
-                            <div class="form-group">
-                                <label>Select Sender Account</label>
-                                <select id="camp-account" required></select>
-                            </div>
-                            <div class="form-group">
-                                <label>Select Email Template (Word .docx or Saved Template)</label>
-                                <select id="camp-template" required></select>
-                            </div>
-                            <div class="form-group">
-                                <label>Subject Line Override (Optional)</label>
-                                <input type="text" id="camp-subject" placeholder="Frozen Shrimp Supply">
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group" style="flex:1;">
-                                    <label>Min Delay (s)</label>
-                                    <input type="number" id="camp-min-delay" value="30" min="1">
-                                </div>
-                                <div class="form-group" style="flex:1;">
-                                    <label>Max Delay (s)</label>
-                                    <input type="number" id="camp-max-delay" value="60" min="1">
-                                </div>
-                            </div>
-                            <div class="form-group checkbox-group">
-                                <input type="checkbox" id="camp-dryrun">
-                                <label for="camp-dryrun">Dry Run Mode (Simulate without sending)</label>
-                            </div>
-                            <button type="submit" class="btn btn-success" style="width:100%; font-size:16px; padding:14px;">🚀 SEND BULK EMAILS TO ALL CONTACTS NOW</button>
-                        </form>
-                    </div>
-
-                    <div class="card-panel">
-                        <h3>Campaigns List</h3>
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Name</th>
-                                    <th>Status</th>
-                                    <th>Recipients</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="campaigns-tbody"></tbody>
-                        </table>
-                    </div>
+                <div class="card-panel">
+                    <h3>Sent Campaigns History</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Status</th>
+                                <th>Recipients</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="campaigns-tbody"></tbody>
+                    </table>
                 </div>
             </section>
 
@@ -393,9 +384,9 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             if (tabName === 'exports') loadExports();
         }
 
-        function toggleTargetMode() {
-            const mode = document.getElementById('camp-target-mode').value;
-            document.getElementById('target-email-container').style.display = (mode === 'SINGLE') ? 'block' : 'none';
+        function toggleAioTargetMode() {
+            const mode = document.getElementById('aio-target-mode').value;
+            document.getElementById('aio-single-email-container').style.display = (mode === 'SINGLE') ? 'block' : 'none';
         }
 
         async function loadStats() {
@@ -512,12 +503,6 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             try {
                 const res = await fetch('/api/templates');
                 const templates = await res.json();
-                const select = document.getElementById('camp-template');
-                if (!templates || templates.length === 0) {
-                    select.innerHTML = '<option value="">No templates available - Upload a Word document or create one</option>';
-                    return;
-                }
-                select.innerHTML = templates.map(t => `<option value="${t.id}">${t.name} (Subject: ${t.subject})</option>`).join('');
                 if (templates.length > 0) {
                     document.getElementById('tpl-name').value = templates[0].name;
                     document.getElementById('tpl-subject').value = templates[0].subject;
@@ -597,6 +582,35 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             }
         }
 
+        async function handleAllInOneSend(e) {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('name', document.getElementById('aio-name').value);
+            
+            const docxInput = document.getElementById('aio-docx-file');
+            if (docxInput.files[0]) formData.append('docx_file', docxInput.files[0]);
+
+            const contactsInput = document.getElementById('aio-contacts-file');
+            if (contactsInput.files[0]) formData.append('contacts_file', contactsInput.files[0]);
+
+            const mode = document.getElementById('aio-target-mode').value;
+            if (mode === 'SINGLE') {
+                formData.append('target_email', document.getElementById('aio-single-email').value);
+            }
+
+            formData.append('is_dry_run', document.getElementById('aio-dryrun').checked);
+
+            try {
+                const res = await fetch('/api/campaigns/create-and-send', { method: 'POST', body: formData });
+                const data = await res.json();
+                alert(`🚀 Campaign Launched! Total Recipients: ${data.total_recipients}. Download per-email PDF/TXT bundle in Exports tab.`);
+                loadCampaigns();
+                loadStats();
+            } catch (err) {
+                alert("Campaign launch failed: " + err.message);
+            }
+        }
+
         async function uploadDocxTemplate(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -609,31 +623,6 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                 loadTemplates();
             } catch (err) {
                 alert("Word template upload failed: " + err.message);
-            }
-        }
-
-        async function handleCreateCampaign(e) {
-            e.preventDefault();
-            const mode = document.getElementById('camp-target-mode').value;
-            const targetEmail = (mode === 'SINGLE') ? document.getElementById('camp-target-email').value : '';
-
-            const formData = new FormData();
-            formData.append('name', document.getElementById('camp-name').value);
-            formData.append('template_id', document.getElementById('camp-template').value);
-            formData.append('subject_override', document.getElementById('camp-subject').value);
-            formData.append('target_email', targetEmail);
-            formData.append('min_delay', document.getElementById('camp-min-delay').value);
-            formData.append('max_delay', document.getElementById('camp-max-delay').value);
-            formData.append('is_dry_run', document.getElementById('camp-dryrun').checked);
-
-            try {
-                const res = await fetch('/api/campaigns/create', { method: 'POST', body: formData });
-                const data = await res.json();
-                alert(`Campaign #${data.campaign_id} created successfully for ${data.total_recipients} recipients! Generated per-email PDF & TXT documents.`);
-                loadCampaigns();
-                loadStats();
-            } catch (err) {
-                alert("Failed to create campaign: " + err.message);
             }
         }
 
@@ -661,7 +650,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             try {
                 const res = await fetch('/api/contacts/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                alert(`Imported ${data.inserted} contacts successfully! You can now send emails to all of them at once.`);
+                alert(`Imported ${data.inserted} contacts successfully!`);
                 loadContacts();
                 loadStats();
             } catch (err) {
@@ -811,31 +800,54 @@ def create_template(name: str = Form(...), subject: str = Form(...), body_conten
     t_id = Repository.add_template(template)
     return {"id": t_id, "status": "created"}
 
-@app.get("/api/campaigns")
-def get_campaigns():
-    campaigns = Repository.get_campaigns()
-    return [
-        {
-            "id": c.id, "name": c.name, "status": c.status,
-            "total_recipients": c.total_recipients, "sent_count": c.sent_count,
-            "failed_count": c.failed_count, "is_dry_run": c.is_dry_run,
-            "created_at": c.created_at
-        } for c in campaigns
-    ]
-
-@app.post("/api/campaigns/create")
-def create_campaign(
-    name: str = Form(...),
-    template_id: int = Form(...),
-    subject_override: Optional[str] = Form(None),
+@app.post("/api/campaigns/create-and-send")
+async def create_and_send_all_in_one(
+    name: str = Form("Frozen Shrimp Outreach"),
+    docx_file: Optional[UploadFile] = File(None),
+    contacts_file: Optional[UploadFile] = File(None),
     target_email: Optional[str] = Form(None),
     min_delay: float = Form(30.0),
     max_delay: float = Form(60.0),
     is_dry_run: bool = Form(False)
 ):
+    template_id = 1
+    # 1. Parse Word File if uploaded
+    if docx_file and docx_file.filename:
+        temp_dir = EXPORTS_DIR / "uploads"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        docx_path = temp_dir / docx_file.filename
+        with open(docx_path, "wb") as buffer:
+            shutil.copyfileobj(docx_file.file, buffer)
+        
+        try:
+            import docx
+            doc = docx.Document(str(docx_path))
+            paras = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+            doc_text = "\n\n".join(paras)
+            
+            tpl = EmailTemplate(
+                name=f"Word: {Path(docx_file.filename).stem}",
+                subject="Frozen Shrimp Supply",
+                body_content=doc_text,
+                is_html=True
+            )
+            template_id = Repository.add_template(tpl)
+        except Exception as e:
+            logger.error(f"Docx parse error: {e}")
+
+    # 2. Import Contacts File if uploaded
+    if contacts_file and contacts_file.filename:
+        temp_dir = EXPORTS_DIR / "uploads"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        contacts_path = temp_dir / contacts_file.filename
+        with open(contacts_path, "wb") as buffer:
+            shutil.copyfileobj(contacts_file.file, buffer)
+        ContactService.import_contacts_to_db(str(contacts_path))
+
+    # 3. Determine Contacts Target
     if target_email and target_email.strip():
         email_clean = target_email.strip()
-        c = Contact(email=email_clean, company="Dynamic Target", contact_name="Target Prospect")
+        c = Contact(email=email_clean, company="Target Prospect", contact_name="Prospect")
         Repository.add_contacts_batch([c])
         contacts = Repository.get_contacts(search=email_clean)
         contact_ids = [contacts[0].id] if contacts else []
@@ -844,7 +856,7 @@ def create_campaign(
         contact_ids = [c.id for c in contacts]
 
     if not contact_ids:
-        raise HTTPException(status_code=400, detail="No target recipient contacts found in database.")
+        raise HTTPException(status_code=400, detail="No contacts found to send emails.")
 
     account = Repository.get_accounts()
     account_id = account[0].id if account else None
@@ -857,13 +869,11 @@ def create_campaign(
         min_delay_sec=min_delay,
         max_delay_sec=max_delay,
         is_dry_run=is_dry_run,
-        subject_override=subject_override,
+        subject_override="Frozen Shrimp Supply",
         total_recipients=len(contact_ids)
     )
 
     campaign_id = Repository.create_campaign(campaign, contact_ids)
-    
-    # Automatically generate per-email PDF & TXT export bundle
     export_res = PerEmailExporter.export_campaign_emails(campaign_id)
 
     return {
@@ -872,6 +882,18 @@ def create_campaign(
         "total_recipients": len(contact_ids),
         "pdf_txt_export": export_res
     }
+
+@app.get("/api/campaigns")
+def get_campaigns():
+    campaigns = Repository.get_campaigns()
+    return [
+        {
+            "id": c.id, "name": c.name, "status": c.status,
+            "total_recipients": c.total_recipients, "sent_count": c.sent_count,
+            "failed_count": c.failed_count, "is_dry_run": c.is_dry_run,
+            "created_at": c.created_at
+        } for c in campaigns
+    ]
 
 @app.get("/api/campaigns/{campaign_id}/export-bundle")
 def download_export_bundle(campaign_id: int):
