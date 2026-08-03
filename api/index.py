@@ -99,7 +99,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         <aside class="sidebar">
             <div class="brand">
                 <h2>✈ TradePilot</h2>
-                <span class="badge">v2.3 Live Gmail Dispatch</span>
+                <span class="badge">v2.4 OAuth Verified</span>
             </div>
             <nav class="nav-menu">
                 <button class="nav-btn active" onclick="showTab('dashboard', event)">📊 Dashboard</button>
@@ -176,7 +176,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                             <tr>
                                 <th>ID</th>
                                 <th>Sender Email</th>
-                                <th>Status</th>
+                                <th>OAuth Status</th>
                                 <th>Sent Today</th>
                                 <th>Connected At</th>
                             </tr>
@@ -451,13 +451,13 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                     <tr>
                         <td>#${a.id}</td>
                         <td><strong>${a.email}</strong></td>
-                        <td><span class="badge" style="background:rgba(166,227,161,0.2); color:#a6e3a1;">${a.is_active ? 'Active OAuth' : 'Pending'}</span></td>
+                        <td><span class="badge" style="background:${a.has_oauth ? 'rgba(166,227,161,0.2)' : 'rgba(243,139,168,0.2)'}; color:${a.has_oauth ? '#a6e3a1' : '#f38ba8'};">${a.has_oauth ? '✅ Active OAuth' : '⚠️ Credentials Needed'}</span></td>
                         <td>${a.sent_today_count}</td>
                         <td>${a.created_at}</td>
                     </tr>
                 `).join('');
 
-                select.innerHTML = accounts.map(a => `<option value="${a.id}">${a.email} (ID #${a.id})</option>`).join('');
+                select.innerHTML = accounts.map(a => `<option value="${a.id}">${a.email} ${a.has_oauth ? '(OAuth Active)' : '(Upload credentials.json)'}</option>`).join('');
             } catch (e) {
                 console.error("Accounts load failed", e);
             }
@@ -582,13 +582,13 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                 const res = await fetch('/api/accounts/connect', { method: 'POST', body: formData });
                 const data = await res.json();
                 if (res.ok && data.email) {
-                    alert(`Connected Gmail Account: ${data.email}`);
+                    alert(`✅ Successfully Connected Gmail Account: ${data.email}! Live Gmail API outreach is now active.`);
                     loadAccounts();
                 } else {
-                    alert("Account connection error: " + (data.detail || "Invalid credentials.json format"));
+                    alert("❌ Account connection error: " + (data.detail || "Invalid credentials.json format"));
                 }
             } catch (err) {
-                alert("Account connection failed: " + err.message);
+                alert("❌ Account connection failed: " + err.message);
             }
         }
 
@@ -649,6 +649,10 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                     }
 
                     const batchData = await batchRes.json();
+                    if (batchData.warning) {
+                        alert("⚠️ " + batchData.warning);
+                    }
+
                     totalSent = batchData.sent_count;
                     remaining = batchData.remaining;
                     isComplete = batchData.is_complete;
@@ -750,7 +754,8 @@ def get_accounts():
     return [
         {
             "id": a.id, "email": a.email, "display_name": a.display_name,
-            "is_active": a.is_active, "sent_today_count": a.sent_today_count,
+            "is_active": a.is_active, "has_oauth": bool(a.refresh_token_encrypted and len(a.refresh_token_encrypted) > 10),
+            "sent_today_count": a.sent_today_count,
             "created_at": a.created_at
         } for a in accounts
     ]
@@ -1008,6 +1013,7 @@ def process_campaign_batch(campaign_id: int, batch_size: int = 3):
 
         batch = pending[:batch_size]
         sent_in_batch = 0
+        warning_msg = None
 
         refresh_tok = getattr(acc_obj, "refresh_token_encrypted", None) if acc_obj else None
 
@@ -1037,11 +1043,14 @@ def process_campaign_batch(campaign_id: int, batch_size: int = 3):
                         Repository.update_recipient_status(rec["recipient_id"], "FAILED", error_reason=err_str, sent_at=sent_at)
                         Repository.log_email_activity(campaign_id, c_obj.email, "FAILED", "ERROR", f"Failure: {err_str}", sent_at)
         else:
+            if not refresh_tok and not is_dry_run:
+                warning_msg = "Gmail Account OAuth credentials.json is not connected yet! Please upload credentials.json in the 🔑 Gmail Accounts tab to enable live sending."
+            
             for rec in batch:
                 sent_at = datetime.now().isoformat()
                 msg_id = f"DRY_RUN_{rec['recipient_id']}"
                 Repository.update_recipient_status(rec["recipient_id"], "SENT", message_id=msg_id, sent_at=sent_at)
-                Repository.log_email_activity(campaign_id, rec["email"], "DRY_RUN", "INFO", f"Simulated send to {rec['email']}", sent_at)
+                Repository.log_email_activity(campaign_id, rec["email"], "DRY_RUN", "INFO", f"Simulated send to {rec['email']} (credentials.json needed for live send)", sent_at)
                 sent_in_batch += 1
 
         remaining_count = len(pending) - len(batch)
@@ -1057,6 +1066,7 @@ def process_campaign_batch(campaign_id: int, batch_size: int = 3):
             "remaining": max(0, remaining_count),
             "sent_count": sent_cnt,
             "total": tot_cnt,
+            "warning": warning_msg,
             "is_complete": (remaining_count <= 0)
         }
     except Exception as batch_err:
