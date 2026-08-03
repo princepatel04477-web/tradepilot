@@ -16,6 +16,7 @@ from app.services.contact_service import ContactService
 from app.services.template_service import template_service
 from app.services.email_exporter import PerEmailExporter
 from app.services.export_service import ExportService
+from app.services.campaign_engine import CampaignWorkerThread
 from app.gmail.auth import GmailOAuthManager
 from app.logger import logger
 
@@ -94,11 +95,11 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         <aside class="sidebar">
             <div class="brand">
                 <h2>✈ TradePilot</h2>
-                <span class="badge">v1.4 Fail-Safe DOCX</span>
+                <span class="badge">v1.5 Instant Send & Delay</span>
             </div>
             <nav class="nav-menu">
                 <button class="nav-btn active" onclick="showTab('dashboard', event)">📊 Dashboard</button>
-                <button class="nav-btn" onclick="showTab('campaigns', event)">🚀 All-In-One Campaign Sender</button>
+                <button class="nav-btn" onclick="showTab('campaigns', event)">🚀 Instant Campaign Sender</button>
                 <button class="nav-btn" onclick="showTab('contacts', event)">👥 Contacts</button>
                 <button class="nav-btn" onclick="showTab('gmail', event)">🔑 Gmail Accounts</button>
                 <button class="nav-btn" onclick="showTab('templates', event)">📝 Upload Word (.docx)</button>
@@ -186,12 +187,12 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             <!-- CAMPAIGNS TAB -->
             <section id="tab-campaigns" class="tab-content">
                 <header class="page-header">
-                    <h1>⚡ All-In-One Bulk Campaign Sender</h1>
-                    <p class="subtitle">Upload your Word (.docx) template + Upload Contacts + Hit Send all right here in one step!</p>
+                    <h1>⚡ All-In-One Instant Campaign Launcher</h1>
+                    <p class="subtitle">Upload Word (.docx) template + Upload Contacts + Custom Delay Controls + Hit Send!</p>
                 </header>
 
                 <div class="all-in-one-panel">
-                    <h3 style="color:var(--accent-green); margin-bottom:15px;">🚀 Single-Form Bulk Outreach Launcher</h3>
+                    <h3 style="color:var(--accent-green); margin-bottom:15px;">🚀 Instant Campaign Dispatcher</h3>
                     <form id="all-in-one-form" onsubmit="handleAllInOneSend(event)">
                         <div class="grid-2col">
                             <div>
@@ -224,10 +225,19 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                                     <input type="email" id="aio-single-email" placeholder="e.g. enquiries@dibellacoffee.com">
                                 </div>
                                 <div class="form-group">
-                                    <label style="font-weight:700;">5. Sender Email Account</label>
-                                    <select id="camp-account" required></select>
+                                    <label style="font-weight:700;">5. Sending Delay Between Emails (Seconds)</label>
+                                    <div class="form-row">
+                                        <div style="flex:1;">
+                                            <label style="font-size:11px; color:var(--text-muted);">Min Delay (s)</label>
+                                            <input type="number" id="aio-min-delay" value="5" min="1">
+                                        </div>
+                                        <div style="flex:1;">
+                                            <label style="font-size:11px; color:var(--text-muted);">Max Delay (s)</label>
+                                            <input type="number" id="aio-max-delay" value="10" min="1">
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="form-group checkbox-group" style="margin-top:20px;">
+                                <div class="form-group checkbox-group" style="margin-top:10px;">
                                     <input type="checkbox" id="aio-dryrun">
                                     <label for="aio-dryrun" style="font-weight:600;">Dry Run Mode (Simulate send)</label>
                                 </div>
@@ -235,7 +245,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                         </div>
 
                         <button type="submit" class="btn btn-success" style="width:100%; font-size:18px; padding:16px; margin-top:15px; border-radius:10px; cursor:pointer;">
-                            🚀 UPLOAD WORD FILE, IMPORT CONTACTS & BULK SEND NOW!
+                            🚀 SEND EMAILS NOW VIA GMAIL API!
                         </button>
                     </form>
                 </div>
@@ -466,7 +476,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                     <tr>
                         <td>#${c.id}</td>
                         <td>${c.name}</td>
-                        <td>${c.status}</td>
+                        <td><span class="badge" style="background:rgba(137,180,250,0.2); color:#89b4fa;">${c.status}</span></td>
                         <td>${c.sent_count} / ${c.total_recipients}</td>
                         <td><a href="/api/campaigns/${c.id}/export-bundle" class="btn btn-primary" style="font-size:12px; padding:4px 8px;">📦 PDF & TXT Zip</a></td>
                     </tr>
@@ -598,14 +608,17 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                 formData.append('target_email', document.getElementById('aio-single-email').value);
             }
 
+            formData.append('min_delay', document.getElementById('aio-min-delay').value);
+            formData.append('max_delay', document.getElementById('aio-max-delay').value);
             formData.append('is_dry_run', document.getElementById('aio-dryrun').checked);
 
             try {
                 const res = await fetch('/api/campaigns/create-and-send', { method: 'POST', body: formData });
                 const data = await res.json();
-                alert(`🚀 Campaign Launched! Total Recipients: ${data.total_recipients}. Download per-email PDF/TXT bundle in Exports tab.`);
+                alert(`🚀 Campaign Dispatch Started! Sending to ${data.total_recipients} recipient(s) with ${document.getElementById('aio-min-delay').value}s-${document.getElementById('aio-max-delay').value}s delay. Download per-email PDF/TXT bundle in Exports tab.`);
                 loadCampaigns();
                 loadStats();
+                loadActivityLogs();
             } catch (err) {
                 alert("Campaign launch failed: " + err.message);
             }
@@ -819,12 +832,13 @@ def create_template(name: str = Form(...), subject: str = Form(...), body_conten
 
 @app.post("/api/campaigns/create-and-send")
 async def create_and_send_all_in_one(
+    background_tasks: BackgroundTasks,
     name: str = Form("Frozen Shrimp Outreach"),
     docx_file: Optional[UploadFile] = File(None),
     contacts_file: Optional[UploadFile] = File(None),
     target_email: Optional[str] = Form(None),
-    min_delay: float = Form(30.0),
-    max_delay: float = Form(60.0),
+    min_delay: float = Form(5.0),
+    max_delay: float = Form(10.0),
     is_dry_run: bool = Form(False)
 ):
     template_id = 1
@@ -893,9 +907,19 @@ async def create_and_send_all_in_one(
     campaign_id = Repository.create_campaign(campaign, contact_ids)
     export_res = PerEmailExporter.export_campaign_emails(campaign_id)
 
+    # Instantly trigger campaign dispatch thread in background task!
+    def run_worker_task():
+        try:
+            worker = CampaignWorkerThread(campaign_id)
+            worker.run()
+        except Exception as err:
+            logger.error(f"Campaign worker dispatch error: {err}")
+
+    background_tasks.add_task(run_worker_task)
+
     return {
         "campaign_id": campaign_id,
-        "status": "created",
+        "status": "sending",
         "total_recipients": len(contact_ids),
         "pdf_txt_export": export_res
     }
