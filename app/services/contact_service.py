@@ -176,11 +176,15 @@ class ContactService:
     @staticmethod
     def import_contacts_to_db(filepath: str) -> Dict[str, Any]:
         contacts, errors = ContactService.parse_import_file(filepath)
-        inserted_count = Repository.add_contacts_batch(contacts)
-        logger.info(f"Imported {inserted_count} new contacts from {filepath} ({len(errors)} warnings).")
+        contact_ids = []
+        for c in contacts:
+            c_id = Repository.upsert_contact_and_get_id(c)
+            if c_id:
+                contact_ids.append(c_id)
+        logger.info(f"Imported/Resolved {len(contact_ids)} contacts from {filepath} ({len(errors)} warnings).")
         return {
             "total_parsed": len(contacts),
-            "inserted": inserted_count,
-            "duplicates_skipped": len(contacts) - inserted_count,
+            "inserted": len(contact_ids),
+            "contact_ids": contact_ids,
             "errors": errors
         }

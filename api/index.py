@@ -972,6 +972,7 @@ async def create_and_send_all_in_one(
                 logger.error(f"Docx parse warning: {e}")
 
         # 2. Import Contacts File if uploaded
+        contact_ids = []
         if contacts_file and contacts_file.filename and contacts_file.filename.strip():
             temp_dir = EXPORTS_DIR / "uploads"
             temp_dir.mkdir(parents=True, exist_ok=True)
@@ -979,7 +980,8 @@ async def create_and_send_all_in_one(
             with open(contacts_path, "wb") as buffer:
                 shutil.copyfileobj(contacts_file.file, buffer)
             try:
-                ContactService.import_contacts_to_db(str(contacts_path))
+                res_import = ContactService.import_contacts_to_db(str(contacts_path))
+                contact_ids = res_import.get("contact_ids", [])
             except Exception as import_err:
                 logger.error(f"Contact import error: {import_err}")
                 raise HTTPException(status_code=400, detail=f"Contacts file import failed: {import_err}")
@@ -988,10 +990,9 @@ async def create_and_send_all_in_one(
         if target_email and target_email.strip():
             email_clean = target_email.strip()
             c = Contact(email=email_clean, company="Target Prospect", contact_name="Prospect")
-            Repository.add_contacts_batch([c])
-            contacts = Repository.get_contacts(search=email_clean)
-            contact_ids = [contacts[0].id] if contacts else []
-        else:
+            c_id = Repository.upsert_contact_and_get_id(c)
+            contact_ids = [c_id]
+        elif not contact_ids:
             contacts = Repository.get_contacts(status="Active")
             contact_ids = [c.id for c in contacts]
 

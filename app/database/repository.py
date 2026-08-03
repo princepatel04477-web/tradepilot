@@ -58,6 +58,19 @@ class Repository:
 
     # --- CONTACT REPOSITORY ---
     @staticmethod
+    def upsert_contact_and_get_id(c: Contact) -> int:
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT OR IGNORE INTO contacts (company, contact_name, email, country, city, phone, tags, status, custom_fields_json, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (c.company, c.contact_name, c.email, c.country, c.city, c.phone, c.tags, c.status, c.custom_fields_json, c.created_at)
+            )
+            row = conn.execute("SELECT id FROM contacts WHERE email=?", (c.email,)).fetchone()
+            conn.commit()
+            return row["id"] if row else 0
+
+    @staticmethod
     def add_contacts_batch(contacts: List[Contact]) -> int:
         inserted = 0
         with db_manager.get_connection() as conn:
