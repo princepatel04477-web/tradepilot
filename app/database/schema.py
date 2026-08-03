@@ -1,3 +1,4 @@
+from datetime import datetime
 from app.database.connection import db_manager
 from app.logger import logger
 
@@ -97,10 +98,75 @@ CREATE TABLE IF NOT EXISTS email_logs (
 CREATE INDEX IF NOT EXISTS idx_logs_campaign ON email_logs(campaign_id);
 """
 
+DEFAULT_TEMPLATE_BODY = """Dear {{Contact}},
+
+I hope you are doing well.
+
+My name is ARYAN KANANI and I represent VARUNYA INTERNATIONAL an exporter of premium-quality frozen shrimp from India.
+
+We specialize in supplying high-quality Vannamei processed in internationally certified facilities.
+
+Our products comply with global food safety standards and are available in various sizes and specifications to meet your market requirements.
+
+Our product range includes:
+- Frozen Vannamei Shrimp (Head-On, Headless, Peeled, PD, PDTO, EZ Peel)
+- IQF & Block Frozen
+- Various counts and packaging options
+- Custom private labelling available
+
+Why work with us?
+- Consistent premium quality
+- Competitive pricing
+- Timely shipments
+- Flexible packaging according to buyer requirements
+
+Please let me know your required specifications, destination port, and estimated order quantity so we can prepare our best offer.
+
+Thank you for your time. I look forward to the possibility of working together.
+
+Kind regards,
+
+ARYAN KANANI
+SALES MANAGING DIRECTOR
+VARUNYA INTERNATIONAL
+CONTACT: +91 8141888043
+Email: varunyainternational@gmail.com
+"""
+
 def init_db():
     try:
         db_manager.execute_script(SCHEMA_SQL)
         logger.info("SQLite database schema initialized successfully.")
+
+        now_str = datetime.now().isoformat()
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Ensure default active sender account exists
+            cursor.execute("SELECT COUNT(*) FROM accounts")
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("""
+                    INSERT INTO accounts (email, display_name, is_active, created_at)
+                    VALUES (?, ?, 1, ?)
+                """, ("varunyainternational@gmail.com", "Varunya International Sales", now_str))
+            
+            # Ensure default template exists
+            cursor.execute("SELECT COUNT(*) FROM templates")
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("""
+                    INSERT INTO templates (name, subject, body_content, is_html, variables_json, created_at)
+                    VALUES (?, ?, ?, 1, '["Contact", "Company"]', ?)
+                """, ("Frozen Shrimp Supply", "Frozen Shrimp Supply", DEFAULT_TEMPLATE_BODY, now_str))
+            
+            # Ensure default contact exists
+            cursor.execute("SELECT COUNT(*) FROM contacts")
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("""
+                    INSERT INTO contacts (company, contact_name, email, country, status, created_at)
+                    VALUES (?, ?, ?, ?, 'Active', ?)
+                """, ("Di Bella Coffee", "Procurement Team", "enquiries@dibellacoffee.com", "Australia", now_str))
+                
+            conn.commit()
     except Exception as e:
         logger.error(f"Failed to initialize database schema: {e}")
         raise e
