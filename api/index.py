@@ -101,7 +101,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         <aside class="sidebar">
             <div class="brand">
                 <h2>✈ TradePilot</h2>
-                <span class="badge">v3.0 Gmail API + SMTP</span>
+                <span class="badge">v3.1 Production Ready</span>
             </div>
             <nav class="nav-menu">
                 <button class="nav-btn active" onclick="showTab('dashboard', event)">📊 Dashboard</button>
@@ -813,18 +813,22 @@ def connect_account_smtp(
     email: str = Form("varunyainternational@gmail.com"),
     app_password: str = Form(...)
 ):
+    clean_email = email.strip().lower()
     clean_pwd = app_password.replace(" ", "").strip()
-    token_data = {"type": "SMTP", "app_password": clean_pwd, "email": email}
+    token_data = {"type": "SMTP", "app_password": clean_pwd, "email": clean_email}
     encrypted_token = token_crypto.encrypt(json.dumps(token_data))
+    now_str = datetime.now().isoformat()
     
     with db_manager.get_connection() as conn:
         conn.execute(
-            "UPDATE accounts SET refresh_token_encrypted = ?, is_active = 1 WHERE email = ?",
-            (encrypted_token, email)
+            "INSERT INTO accounts (id, email, display_name, refresh_token_encrypted, is_active, created_at) "
+            "VALUES (1, ?, 'Varunya International Sales', ?, 1, ?) "
+            "ON CONFLICT(id) DO UPDATE SET email=excluded.email, refresh_token_encrypted=excluded.refresh_token_encrypted, is_active=1",
+            (clean_email, encrypted_token, now_str)
         )
         conn.commit()
 
-    return {"status": "connected", "email": email, "auth_type": "SMTP"}
+    return {"status": "connected", "email": clean_email, "auth_type": "SMTP"}
 
 @app.post("/api/accounts/connect")
 async def connect_account_json(file: UploadFile = File(...)):
@@ -874,11 +878,13 @@ async def connect_account_json(file: UploadFile = File(...)):
         else:
             raise HTTPException(status_code=400, detail="Invalid JSON structure. Please upload credentials.json or token.json.")
 
-        # Upsert account in SQLite
+        now_str = datetime.now().isoformat()
         with db_manager.get_connection() as conn:
             conn.execute(
-                "UPDATE accounts SET refresh_token_encrypted = ?, is_active = 1 WHERE email = ?",
-                (encrypted_token, user_email)
+                "INSERT INTO accounts (id, email, display_name, refresh_token_encrypted, is_active, created_at) "
+                "VALUES (1, ?, 'Varunya International Sales', ?, 1, ?) "
+                "ON CONFLICT(id) DO UPDATE SET email=excluded.email, refresh_token_encrypted=excluded.refresh_token_encrypted, is_active=1",
+                (user_email, encrypted_token, now_str)
             )
             conn.commit()
 
