@@ -99,7 +99,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         <aside class="sidebar">
             <div class="brand">
                 <h2>✈ TradePilot</h2>
-                <span class="badge">v2.0 Chunked Batch Sender</span>
+                <span class="badge">v2.1 Account Fixed</span>
             </div>
             <nav class="nav-menu">
                 <button class="nav-btn active" onclick="showTab('dashboard', event)">📊 Dashboard</button>
@@ -947,8 +947,8 @@ async def create_and_send_all_in_one(
         if not contact_ids:
             raise HTTPException(status_code=400, detail="No active contacts found in database. Please upload contacts file.")
 
-        account = Repository.get_accounts()
-        account_id = account[0].id if account else None
+        accounts_list = Repository.get_accounts()
+        account_id = accounts_list[0].id if accounts_list else None
 
         campaign = Campaign(
             name=name,
@@ -995,10 +995,9 @@ def process_campaign_batch(campaign_id: int, batch_size: int = 3):
         campaign_row = Repository.get_campaign_by_id(campaign_id)
         is_dry_run = getattr(campaign_row, "is_dry_run", False) if campaign_row else False
         template_id = getattr(campaign_row, "template_id", 1) if campaign_row else 1
-        account_id = getattr(campaign_row, "account_id", 1) if campaign_row else 1
 
-        account = Repository.get_accounts()
-        acc_obj = account[0] if account else None
+        accounts_list = Repository.get_accounts()
+        acc_obj = accounts_list[0] if accounts_list else None
 
         template = Repository.get_template_by_id(template_id)
         template_body = template.body_content if template else "Dear {{Contact}},\n\nRe: {{Company}}"
@@ -1006,8 +1005,10 @@ def process_campaign_batch(campaign_id: int, batch_size: int = 3):
         batch = pending[:batch_size]
         sent_in_batch = 0
 
-        if not is_dry_run and acc_obj and acc_obj.refresh_token_encrypted:
-            creds = GmailOAuthManager.get_credentials_from_encrypted(acc_obj.refresh_token_encrypted)
+        refresh_tok = getattr(acc_obj, "refresh_token_encrypted", None) if acc_obj else None
+
+        if not is_dry_run and acc_obj and refresh_tok:
+            creds = GmailOAuthManager.get_credentials_from_encrypted(refresh_tok)
             if creds:
                 gmail_client = GmailApiClient(creds)
                 for rec in batch:
