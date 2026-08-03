@@ -11,10 +11,12 @@ from app.database import init_db, Repository
 from app.models.contact import Contact
 from app.models.template import EmailTemplate
 from app.models.campaign import Campaign
+from app.models.account import GmailAccount
 from app.services.contact_service import ContactService
 from app.services.template_service import template_service
 from app.services.email_exporter import PerEmailExporter
 from app.services.export_service import ExportService
+from app.gmail.auth import GmailOAuthManager
 from app.logger import logger
 
 app = FastAPI(
@@ -80,11 +82,14 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         .btn { padding: 10px 18px; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; transition: background 0.2s; text-decoration: none; display: inline-block; }
         .btn-primary { background: var(--accent-blue); color: #11111b; }
         .btn-primary:hover { background: #b4befe; }
+        .btn-secondary { background: rgba(255,255,255,0.1); color: var(--text-main); }
         .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
         .form-group input, .form-group select, .form-group textarea { background: rgba(17, 17, 27, 0.8); border: 1px solid var(--border-color); color: var(--text-main); padding: 10px; border-radius: 6px; }
         .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .form-row { display: flex; gap: 10px; }
         .checkbox-group { flex-direction: row; align-items: center; gap: 8px; }
+        .modal { display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); align-items:center; justify-content:center; z-index:100; }
+        .modal-content { background:#181825; border:1px solid var(--border-color); padding:24px; border-radius:12px; width:450px; max-width:90%; }
     </style>
 </head>
 <body>
@@ -99,6 +104,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                 <button class="nav-btn active" onclick="showTab('dashboard', event)">📊 Dashboard</button>
                 <button class="nav-btn" onclick="showTab('campaigns', event)">🚀 Campaigns</button>
                 <button class="nav-btn" onclick="showTab('contacts', event)">👥 Contacts</button>
+                <button class="nav-btn" onclick="showTab('gmail', event)">🔑 Gmail Accounts</button>
                 <button class="nav-btn" onclick="showTab('templates', event)">📝 Templates</button>
                 <button class="nav-btn" onclick="showTab('exports', event)">📄 Email PDF/TXT</button>
             </nav>
@@ -150,6 +156,37 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                 </div>
             </section>
 
+            <!-- GMAIL ACCOUNTS TAB -->
+            <section id="tab-gmail" class="tab-content">
+                <header class="page-header">
+                    <h1>Gmail OAuth Accounts Manager</h1>
+                    <p class="subtitle">Connect sender accounts via official Google OAuth 2.0 (varunyainternational@gmail.com)</p>
+                </header>
+
+                <div class="card-panel">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                        <h3>Connected Accounts</h3>
+                        <input type="file" id="json-file-input" style="display:none;" onchange="uploadCredentialsJson(event)">
+                        <button class="btn btn-primary" onclick="document.getElementById('json-file-input').click()">🔑 Upload credentials.json to Connect Account</button>
+                    </div>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Sender Email</th>
+                                <th>Status</th>
+                                <th>Sent Today</th>
+                                <th>Connected At</th>
+                            </tr>
+                        </thead>
+                        <tbody id="accounts-tbody">
+                            <tr><td colspan="5" class="text-center">Loading connected accounts...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
             <!-- CAMPAIGNS TAB -->
             <section id="tab-campaigns" class="tab-content">
                 <header class="page-header">
@@ -163,6 +200,10 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                             <div class="form-group">
                                 <label>Campaign Name</label>
                                 <input type="text" id="camp-name" required placeholder="e.g. Frozen Shrimp Outreach">
+                            </div>
+                            <div class="form-group">
+                                <label>Select Sender Account</label>
+                                <select id="camp-account" required></select>
                             </div>
                             <div class="form-group">
                                 <label>Select Template</label>
@@ -214,9 +255,10 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                     <h1>Contact Management</h1>
                 </header>
                 <div class="card-panel">
-                    <div style="margin-bottom:15px;">
+                    <div style="display:flex; gap:10px; margin-bottom:15px;">
+                        <button class="btn btn-primary" onclick="openAddContactModal()">➕ Add Contact Email</button>
                         <input type="file" id="contact-file-input" style="display:none;" onchange="uploadContactFile(event)">
-                        <button class="btn btn-primary" onclick="document.getElementById('contact-file-input').click()">📁 Import Excel / CSV</button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('contact-file-input').click()">📁 Import Excel / CSV</button>
                     </div>
                     <table class="data-table">
                         <thead>
@@ -272,6 +314,35 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
         </main>
     </div>
 
+    <!-- Add Contact Modal -->
+    <div id="add-contact-modal" class="modal">
+        <div class="modal-content">
+            <h3 style="margin-bottom:15px;">➕ Add New Recipient Contact</h3>
+            <form onsubmit="handleAddSingleContact(event)">
+                <div class="form-group">
+                    <label>Email Address *</label>
+                    <input type="email" id="single-email" required placeholder="enquiries@dibellacoffee.com">
+                </div>
+                <div class="form-group">
+                    <label>Contact Name</label>
+                    <input type="text" id="single-name" placeholder="Procurement Team">
+                </div>
+                <div class="form-group">
+                    <label>Company Name</label>
+                    <input type="text" id="single-company" placeholder="Di Bella Coffee">
+                </div>
+                <div class="form-group">
+                    <label>Country</label>
+                    <input type="text" id="single-country" placeholder="Australia">
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:15px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeAddContactModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Contact</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         document.addEventListener("DOMContentLoaded", () => {
             loadStats();
@@ -279,6 +350,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             loadCampaigns();
             loadContacts();
             loadTemplates();
+            loadAccounts();
         });
 
         function showTab(tabName, event) {
@@ -291,6 +363,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             if (tabName === 'dashboard') loadStats();
             if (tabName === 'campaigns') loadCampaigns();
             if (tabName === 'contacts') loadContacts();
+            if (tabName === 'gmail') loadAccounts();
             if (tabName === 'templates') loadTemplates();
             if (tabName === 'exports') loadExports();
         }
@@ -327,6 +400,35 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                 `).join('');
             } catch (e) {
                 console.error("Logs load failed", e);
+            }
+        }
+
+        async function loadAccounts() {
+            try {
+                const res = await fetch('/api/accounts');
+                const accounts = await res.json();
+                const tbody = document.getElementById('accounts-tbody');
+                const select = document.getElementById('camp-account');
+                
+                if (!accounts || accounts.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center">No connected Gmail accounts</td></tr>';
+                    select.innerHTML = '<option value="">No accounts connected (Dry Run Only)</option>';
+                    return;
+                }
+                
+                tbody.innerHTML = accounts.map(a => `
+                    <tr>
+                        <td>#${a.id}</td>
+                        <td><strong>${a.email}</strong></td>
+                        <td><span class="badge" style="background:rgba(166,227,161,0.2); color:#a6e3a1;">${a.is_active ? 'Active OAuth' : 'Pending'}</span></td>
+                        <td>${a.sent_today_count}</td>
+                        <td>${a.created_at}</td>
+                    </tr>
+                `).join('');
+
+                select.innerHTML = accounts.map(a => `<option value="${a.id}">${a.email} (ID #${a.id})</option>`).join('');
+            } catch (e) {
+                console.error("Accounts load failed", e);
             }
         }
 
@@ -414,6 +516,48 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             }
         }
 
+        function openAddContactModal() {
+            document.getElementById('add-contact-modal').style.display = 'flex';
+        }
+
+        function closeAddContactModal() {
+            document.getElementById('add-contact-modal').style.display = 'none';
+        }
+
+        async function handleAddSingleContact(e) {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('email', document.getElementById('single-email').value);
+            formData.append('contact_name', document.getElementById('single-name').value);
+            formData.append('company', document.getElementById('single-company').value);
+            formData.append('country', document.getElementById('single-country').value);
+
+            try {
+                const res = await fetch('/api/contacts/add', { method: 'POST', body: formData });
+                alert("Contact added successfully!");
+                closeAddContactModal();
+                loadContacts();
+                loadStats();
+            } catch (err) {
+                alert("Failed to add contact: " + err.message);
+            }
+        }
+
+        async function uploadCredentialsJson(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const res = await fetch('/api/accounts/connect', { method: 'POST', body: formData });
+                const data = await res.json();
+                alert(`Connected Gmail Account: ${data.email}`);
+                loadAccounts();
+            } catch (err) {
+                alert("Account connection failed: " + err.message);
+            }
+        }
+
         async function handleCreateCampaign(e) {
             e.preventDefault();
             const formData = new FormData();
@@ -489,6 +633,39 @@ def get_stats():
     except Exception as e:
         return {"total_contacts": 0, "total_campaigns": 0, "sent_today": 0, "queued": 0, "failed": 0, "success_rate": 100.0}
 
+@app.get("/api/accounts")
+def get_accounts():
+    accounts = Repository.get_accounts()
+    return [
+        {
+            "id": a.id, "email": a.email, "display_name": a.display_name,
+            "is_active": a.is_active, "sent_today_count": a.sent_today_count,
+            "created_at": a.created_at
+        } for a in accounts
+    ]
+
+@app.post("/api/accounts/connect")
+async def connect_account_json(file: UploadFile = File(...)):
+    temp_dir = EXPORTS_DIR / "uploads"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_path = temp_dir / file.filename
+
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    res = GmailOAuthManager.start_oauth_flow(str(temp_path))
+    if not res:
+        raise HTTPException(status_code=400, detail="OAuth authorization failed.")
+
+    acc = GmailAccount(
+        email=res["email"],
+        display_name=res["email"],
+        refresh_token_encrypted=res["encrypted_token"],
+        is_active=True
+    )
+    acc_id = Repository.add_account(acc)
+    return {"id": acc_id, "email": res["email"], "status": "connected"}
+
 @app.get("/api/contacts")
 def get_contacts(search: str = "", status: str = ""):
     contacts = Repository.get_contacts(search=search, status=status)
@@ -499,6 +676,22 @@ def get_contacts(search: str = "", status: str = ""):
             "phone": c.phone, "tags": c.tags, "status": c.status
         } for c in contacts
     ]
+
+@app.post("/api/contacts/add")
+def add_single_contact(
+    email: str = Form(...),
+    company: Optional[str] = Form(""),
+    contact_name: Optional[str] = Form(""),
+    country: Optional[str] = Form(""),
+    city: Optional[str] = Form(""),
+    phone: Optional[str] = Form("")
+):
+    c = Contact(
+        email=email, company=company, contact_name=contact_name,
+        country=country, city=city, phone=phone
+    )
+    count = Repository.add_contacts_batch([c])
+    return {"status": "added", "inserted": count}
 
 @app.post("/api/contacts/upload")
 async def upload_contacts(file: UploadFile = File(...)):
