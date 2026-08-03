@@ -305,6 +305,18 @@ class Repository:
                     conn.execute("UPDATE campaigns SET failed_count = failed_count + 1 WHERE id=?", (c_id,))
             conn.commit()
 
+    @staticmethod
+    def get_campaign_stats(campaign_id: int) -> Dict[str, Any]:
+        with db_manager.get_connection() as conn:
+            c = conn.execute("SELECT total_recipients, sent_count, failed_count FROM campaigns WHERE id=?", (campaign_id,)).fetchone()
+            if c:
+                return {
+                    "total": c["total_recipients"],
+                    "sent_count": c["sent_count"],
+                    "failed_count": c["failed_count"]
+                }
+            return {"total": 0, "sent_count": 0, "failed_count": 0}
+
     # --- LOGS & STATS REPOSITORY ---
     @staticmethod
     def log_email_activity(campaign_id: Optional[int], email: str, status: str, level: str, details: str, timestamp: str):
