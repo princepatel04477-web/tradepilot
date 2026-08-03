@@ -202,6 +202,10 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                                 <input type="text" id="camp-name" required placeholder="e.g. Frozen Shrimp Outreach">
                             </div>
                             <div class="form-group">
+                                <label>Target Recipient Email (Type ANY email or leave blank for all contacts)</label>
+                                <input type="email" id="camp-target-email" placeholder="e.g. buyer@anydomain.com or enquiries@dibellacoffee.com">
+                            </div>
+                            <div class="form-group">
                                 <label>Select Sender Account</label>
                                 <select id="camp-account" required></select>
                             </div>
@@ -256,7 +260,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                 </header>
                 <div class="card-panel">
                     <div style="display:flex; gap:10px; margin-bottom:15px;">
-                        <button class="btn btn-primary" onclick="openAddContactModal()">➕ Add Contact Email</button>
+                        <button class="btn btn-primary" onclick="openAddContactModal()">➕ Add Custom Contact Email</button>
                         <input type="file" id="contact-file-input" style="display:none;" onchange="uploadContactFile(event)">
                         <button class="btn btn-secondary" onclick="document.getElementById('contact-file-input').click()">📁 Import Excel / CSV</button>
                     </div>
@@ -317,23 +321,23 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
     <!-- Add Contact Modal -->
     <div id="add-contact-modal" class="modal">
         <div class="modal-content">
-            <h3 style="margin-bottom:15px;">➕ Add New Recipient Contact</h3>
+            <h3 style="margin-bottom:15px;">➕ Add Custom Recipient Contact</h3>
             <form onsubmit="handleAddSingleContact(event)">
                 <div class="form-group">
-                    <label>Email Address *</label>
-                    <input type="email" id="single-email" required placeholder="enquiries@dibellacoffee.com">
+                    <label>Target Email Address *</label>
+                    <input type="email" id="single-email" required placeholder="buyer@anycompany.com">
                 </div>
                 <div class="form-group">
                     <label>Contact Name</label>
-                    <input type="text" id="single-name" placeholder="Procurement Team">
+                    <input type="text" id="single-name" placeholder="Procurement Manager">
                 </div>
                 <div class="form-group">
                     <label>Company Name</label>
-                    <input type="text" id="single-company" placeholder="Di Bella Coffee">
+                    <input type="text" id="single-company" placeholder="Global Imports LLC">
                 </div>
                 <div class="form-group">
                     <label>Country</label>
-                    <input type="text" id="single-country" placeholder="Australia">
+                    <input type="text" id="single-country" placeholder="United States">
                 </div>
                 <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:15px;">
                     <button type="button" class="btn btn-secondary" onclick="closeAddContactModal()">Cancel</button>
@@ -564,6 +568,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             formData.append('name', document.getElementById('camp-name').value);
             formData.append('template_id', document.getElementById('camp-template').value);
             formData.append('subject_override', document.getElementById('camp-subject').value);
+            formData.append('target_email', document.getElementById('camp-target-email').value);
             formData.append('min_delay', document.getElementById('camp-min-delay').value);
             formData.append('max_delay', document.getElementById('camp-max-delay').value);
             formData.append('is_dry_run', document.getElementById('camp-dryrun').checked);
@@ -747,15 +752,24 @@ def create_campaign(
     name: str = Form(...),
     template_id: int = Form(...),
     subject_override: Optional[str] = Form(None),
+    target_email: Optional[str] = Form(None),
     min_delay: float = Form(30.0),
     max_delay: float = Form(60.0),
     is_dry_run: bool = Form(True)
 ):
-    contacts = Repository.get_contacts(status="Active")
-    if not contacts:
-        raise HTTPException(status_code=400, detail="No active contacts found in database.")
+    if target_email and target_email.strip():
+        email_clean = target_email.strip()
+        c = Contact(email=email_clean, company="Dynamic Target", contact_name="Target Prospect")
+        Repository.add_contacts_batch([c])
+        contacts = Repository.get_contacts(search=email_clean)
+        contact_ids = [contacts[0].id] if contacts else []
+    else:
+        contacts = Repository.get_contacts(status="Active")
+        contact_ids = [c.id for c in contacts]
 
-    contact_ids = [c.id for c in contacts]
+    if not contact_ids:
+        raise HTTPException(status_code=400, detail="No target recipient contact found.")
+
     account = Repository.get_accounts()
     account_id = account[0].id if account else None
 
