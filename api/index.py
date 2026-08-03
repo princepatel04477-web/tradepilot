@@ -549,8 +549,12 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             try {
                 const res = await fetch('/api/accounts/connect', { method: 'POST', body: formData });
                 const data = await res.json();
-                alert(`Connected Gmail Account: ${data.email}`);
-                loadAccounts();
+                if (res.ok && data.email) {
+                    alert(`Connected Gmail Account: ${data.email}`);
+                    loadAccounts();
+                } else {
+                    alert("Account connection error: " + (data.detail || "Invalid credentials.json format"));
+                }
             } catch (err) {
                 alert("Account connection failed: " + err.message);
             }
