@@ -193,18 +193,25 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                         <form id="campaign-form" onsubmit="handleCreateCampaign(event)">
                             <div class="form-group">
                                 <label>Campaign Name</label>
-                                <input type="text" id="camp-name" required placeholder="e.g. Frozen Shrimp Outreach">
+                                <input type="text" id="camp-name" required placeholder="e.g. Frozen Shrimp Bulk Outreach">
                             </div>
                             <div class="form-group">
-                                <label>Target Recipient Email (Type ANY email or leave blank for all contacts)</label>
-                                <input type="email" id="camp-target-email" placeholder="e.g. buyer@anydomain.com or enquiries@dibellacoffee.com">
+                                <label>Target Recipients</label>
+                                <select id="camp-target-mode" onchange="toggleTargetMode()">
+                                    <option value="ALL">📢 Send to ALL Uploaded Contacts in Database (Bulk Campaign)</option>
+                                    <option value="SINGLE">🎯 Send to Specific Target Email Address</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="target-email-container" style="display:none;">
+                                <label>Specific Target Email</label>
+                                <input type="email" id="camp-target-email" placeholder="e.g. buyer@importer.com">
                             </div>
                             <div class="form-group">
                                 <label>Select Sender Account</label>
                                 <select id="camp-account" required></select>
                             </div>
                             <div class="form-group">
-                                <label>Select Template</label>
+                                <label>Select Template (Word .docx or Saved Template)</label>
                                 <select id="camp-template" required></select>
                             </div>
                             <div class="form-group">
@@ -222,10 +229,10 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                                 </div>
                             </div>
                             <div class="form-group checkbox-group">
-                                <input type="checkbox" id="camp-dryrun" checked>
+                                <input type="checkbox" id="camp-dryrun">
                                 <label for="camp-dryrun">Dry Run Mode (Simulate without sending)</label>
                             </div>
-                            <button type="submit" class="btn btn-primary">🚀 Launch & Generate PDF/TXT Exports</button>
+                            <button type="submit" class="btn btn-primary">🚀 Send to All Contacts & Export PDF/TXT</button>
                         </form>
                     </div>
 
@@ -254,9 +261,9 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                 </header>
                 <div class="card-panel">
                     <div style="display:flex; gap:10px; margin-bottom:15px;">
-                        <button class="btn btn-primary" onclick="openAddContactModal()">➕ Add Custom Contact Email</button>
                         <input type="file" id="contact-file-input" style="display:none;" onchange="uploadContactFile(event)">
-                        <button class="btn btn-secondary" onclick="document.getElementById('contact-file-input').click()">📁 Import Excel / CSV</button>
+                        <button class="btn btn-primary" onclick="document.getElementById('contact-file-input').click()">📁 Upload Excel / CSV (Bulk Contacts)</button>
+                        <button class="btn btn-secondary" onclick="openAddContactModal()">➕ Add Custom Contact Email</button>
                     </div>
                     <table class="data-table">
                         <thead>
@@ -276,9 +283,14 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             <!-- TEMPLATES TAB -->
             <section id="tab-templates" class="tab-content">
                 <header class="page-header">
-                    <h1>Email Template Editor</h1>
+                    <h1>Email Template & Word (.docx) Editor</h1>
                 </header>
                 <div class="card-panel">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                        <h3>Saved Templates</h3>
+                        <input type="file" id="docx-file-input" accept=".docx" style="display:none;" onchange="uploadDocxTemplate(event)">
+                        <button class="btn btn-primary" onclick="document.getElementById('docx-file-input').click()">📄 Upload Word (.docx) File as Template</button>
+                    </div>
                     <form id="template-form" onsubmit="handleCreateTemplate(event)">
                         <div class="form-group">
                             <label>Template Name</label>
@@ -289,8 +301,8 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                             <input type="text" id="tpl-subject" required placeholder="Frozen Shrimp Supply">
                         </div>
                         <div class="form-group">
-                            <label>Template Body (Jinja2)</label>
-                            <textarea id="tpl-body" rows="8" required placeholder="Dear {{Contact}}, ..."></textarea>
+                            <label>Template Body (Jinja2 / Word Text)</label>
+                            <textarea id="tpl-body" rows="10" required placeholder="Dear {{Contact}}, ..."></textarea>
                         </div>
                         <button type="submit" class="btn btn-primary">💾 Save Template</button>
                     </form>
@@ -364,6 +376,11 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             if (tabName === 'gmail') loadAccounts();
             if (tabName === 'templates') loadTemplates();
             if (tabName === 'exports') loadExports();
+        }
+
+        function toggleTargetMode() {
+            const mode = document.getElementById('camp-target-mode').value;
+            document.getElementById('target-email-container').style.display = (mode === 'SINGLE') ? 'block' : 'none';
         }
 
         async function loadStats() {
@@ -482,10 +499,15 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
                 const templates = await res.json();
                 const select = document.getElementById('camp-template');
                 if (!templates || templates.length === 0) {
-                    select.innerHTML = '<option value="">No templates available - Create one first</option>';
+                    select.innerHTML = '<option value="">No templates available - Upload a Word document or create one</option>';
                     return;
                 }
                 select.innerHTML = templates.map(t => `<option value="${t.id}">${t.name} (Subject: ${t.subject})</option>`).join('');
+                if (templates.length > 0) {
+                    document.getElementById('tpl-name').value = templates[0].name;
+                    document.getElementById('tpl-subject').value = templates[0].subject;
+                    document.getElementById('tpl-body').value = templates[0].body_content;
+                }
             } catch (e) {
                 console.error("Templates load failed", e);
             }
@@ -560,13 +582,31 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             }
         }
 
+        async function uploadDocxTemplate(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const res = await fetch('/api/templates/upload-docx', { method: 'POST', body: formData });
+                const data = await res.json();
+                alert(`Uploaded Word Document Template: ${data.name}`);
+                loadTemplates();
+            } catch (err) {
+                alert("Word template upload failed: " + err.message);
+            }
+        }
+
         async function handleCreateCampaign(e) {
             e.preventDefault();
+            const mode = document.getElementById('camp-target-mode').value;
+            const targetEmail = (mode === 'SINGLE') ? document.getElementById('camp-target-email').value : '';
+
             const formData = new FormData();
             formData.append('name', document.getElementById('camp-name').value);
             formData.append('template_id', document.getElementById('camp-template').value);
             formData.append('subject_override', document.getElementById('camp-subject').value);
-            formData.append('target_email', document.getElementById('camp-target-email').value);
+            formData.append('target_email', targetEmail);
             formData.append('min_delay', document.getElementById('camp-min-delay').value);
             formData.append('max_delay', document.getElementById('camp-max-delay').value);
             formData.append('is_dry_run', document.getElementById('camp-dryrun').checked);
@@ -574,7 +614,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             try {
                 const res = await fetch('/api/campaigns/create', { method: 'POST', body: formData });
                 const data = await res.json();
-                alert(`Campaign #${data.campaign_id} created successfully! Generated ${data.pdf_txt_export.total_emails} per-email PDF & TXT documents.`);
+                alert(`Campaign #${data.campaign_id} created successfully for ${data.total_recipients} recipients! Generated per-email PDF & TXT documents.`);
                 loadCampaigns();
                 loadStats();
             } catch (err) {
@@ -606,7 +646,7 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
             try {
                 const res = await fetch('/api/contacts/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                alert(`Imported ${data.inserted} contacts successfully!`);
+                alert(`Imported ${data.inserted} contacts successfully! You can now send emails to all of them at once.`);
                 loadContacts();
                 loadStats();
             } catch (err) {
@@ -712,6 +752,36 @@ def get_templates():
         } for t in templates
     ]
 
+@app.post("/api/templates/upload-docx")
+async def upload_docx_template(file: UploadFile = File(...)):
+    temp_dir = EXPORTS_DIR / "uploads"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_path = temp_dir / file.filename
+
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    doc_text = ""
+    try:
+        import docx
+        doc = docx.Document(str(temp_path))
+        paras = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+        doc_text = "\n\n".join(paras)
+    except Exception as e:
+        logger.error(f"Failed to parse docx file: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to parse Word file: {e}")
+
+    tpl_name = Path(file.filename).stem
+    template = EmailTemplate(
+        name=f"Word: {tpl_name}",
+        subject="Frozen Shrimp Supply",
+        body_content=doc_text,
+        is_html=True,
+        variables=["Contact", "Company"]
+    )
+    t_id = Repository.add_template(template)
+    return {"id": t_id, "name": f"Word: {tpl_name}", "body_content": doc_text}
+
 @app.post("/api/templates")
 def create_template(name: str = Form(...), subject: str = Form(...), body_content: str = Form(...), is_html: bool = Form(True)):
     valid, err = template_service.validate_template_syntax(body_content)
@@ -746,7 +816,7 @@ def create_campaign(
     target_email: Optional[str] = Form(None),
     min_delay: float = Form(30.0),
     max_delay: float = Form(60.0),
-    is_dry_run: bool = Form(True)
+    is_dry_run: bool = Form(False)
 ):
     if target_email and target_email.strip():
         email_clean = target_email.strip()
@@ -759,7 +829,7 @@ def create_campaign(
         contact_ids = [c.id for c in contacts]
 
     if not contact_ids:
-        raise HTTPException(status_code=400, detail="No target recipient contact found.")
+        raise HTTPException(status_code=400, detail="No target recipient contacts found in database.")
 
     account = Repository.get_accounts()
     account_id = account[0].id if account else None
