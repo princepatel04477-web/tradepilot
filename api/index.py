@@ -32,12 +32,6 @@ except Exception as e:
     logger.warning(f"Database init warning: {e}")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-WEB_DIR = BASE_DIR / "app" / "web"
-STATIC_DIR = WEB_DIR / "static"
-TEMPLATES_DIR = WEB_DIR / "templates"
-
-if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 INDEX_HTML_CONTENT = """<!DOCTYPE html>
 <html lang="en">
@@ -622,13 +616,6 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
-    index_file = TEMPLATES_DIR / "index.html"
-    if index_file.exists():
-        try:
-            with open(index_file, "r", encoding="utf-8") as f:
-                return f.read()
-        except Exception:
-            pass
     return INDEX_HTML_CONTENT
 
 @app.get("/api/stats")
