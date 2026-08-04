@@ -702,8 +702,13 @@ INDEX_HTML_CONTENT = """<!DOCTYPE html>
 
                 btn.disabled = false;
                 btn.innerText = "🚀 SEND EMAILS NOW VIA GMAIL API / SMTP!";
-                pText.innerText = `✅ ALL ${totalSent} EMAILS DISPATCHED LIVE!`;
-                alert(`✅ ALL ${totalSent} EMAILS DISPATCHED LIVE! Check your Gmail Sent folder! Download PDF & TXT copies in Exports tab.`);
+                if (totalSent >= total && total > 0) {
+                    pText.innerText = `✅ ALL ${totalSent} EMAILS DISPATCHED LIVE!`;
+                    alert(`✅ ALL ${totalSent} EMAILS DISPATCHED LIVE! Check your Gmail Sent folder! Download PDF & TXT copies in Exports tab.`);
+                } else {
+                    pText.innerText = `⚠️ Only ${totalSent} of ${total} emails actually sent.`;
+                    alert(`⚠️ Campaign finished, but only ${totalSent} of ${total} emails were actually sent. Check the Activity Log for the failure reason (likely your Gmail account isn't properly connected — use the App Password method in the 🔑 Gmail Accounts tab).`);
+                }
 
             } catch (err) {
                 btn.disabled = false;
@@ -1169,6 +1174,8 @@ def process_campaign_batch(campaign_id: int, batch_size: int = 3):
                         Repository.update_recipient_status(rec["recipient_id"], "FAILED", error_reason=err_str, sent_at=sent_at)
                         Repository.log_email_activity(campaign_id, c_obj.email, "FAILED", "ERROR", f"Failure: {err_str}", sent_at)
                         sent_in_batch += 1
+                        if not warning_msg:
+                            warning_msg = f"SMTP send failed for {c_obj.email}: {err_str}"
             else:
                 creds = GmailOAuthManager.get_credentials_from_encrypted(refresh_tok)
                 if creds:
@@ -1195,6 +1202,8 @@ def process_campaign_batch(campaign_id: int, batch_size: int = 3):
                             Repository.update_recipient_status(rec["recipient_id"], "FAILED", error_reason=err_str, sent_at=sent_at)
                             Repository.log_email_activity(campaign_id, c_obj.email, "FAILED", "ERROR", f"Failure: {err_str}", sent_at)
                             sent_in_batch += 1
+                            if not warning_msg:
+                                warning_msg = f"Gmail API send failed for {c_obj.email}: {err_str}"
                 else:
                     warning_msg = "Google OAuth Token expired or missing refresh_token. Please upload credentials.json or use Gmail App Password in 🔑 Gmail Accounts tab."
                     for rec in batch:
